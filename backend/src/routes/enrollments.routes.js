@@ -1,6 +1,6 @@
 const express = require('express');
 const { z } = require('zod');
-const { query } = require('../config/db');
+const { query, withTransaction } = require('../config/db');
 const asyncHandler = require('../utils/asyncHandler');
 const ApiError = require('../utils/apiError');
 const validate = require('../middlewares/validate');
@@ -13,6 +13,7 @@ const {
 
 const router = express.Router();
 const dateString = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Fecha inválida (YYYY-MM-DD)');
+const ENROLLMENT_STATUSES = ['ACTIVE', 'SUSPENDED', 'COMPLETED', 'CANCELED'];
 
 const enrollmentSchema = z.object({
   body: z.object({
@@ -20,11 +21,29 @@ const enrollmentSchema = z.object({
     course_campus_id: z.number().int().positive(),
     period_id: z.number().int().positive(),
     enrollment_date: dateString.optional(),
-    status: z.enum(['ACTIVE', 'SUSPENDED', 'COMPLETED', 'CANCELED']).optional(),
+    status: z.enum(ENROLLMENT_STATUSES).optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
   }),
   params: z.object({}).optional(),
   query: z.object({}).optional(),
 });
+
+const enrollmentUpdateSchema = z.object({
+  body: z.object({
+    course_campus_id: z.number().int().positive(),
+    period_id: z.number().int().positive(),
+    enrollment_date: dateString,
+    status: z.enum(ENROLLMENT_STATUSES),
+    notes: z.string().trim().max(500).nullable().optional(),
+  }),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z.object({}).optional(),
+});
+
+const normalizeOptionalText = (value) => {
+  const normalized = String(value ?? '').trim();
+  return normalized || null;
+};
 
 const installmentSchema = z.object({
   body: z.object({
@@ -63,13 +82,37 @@ router.get(
         CONCAT(s.first_name, ' ', s.last_name) AS student_name,
         e.course_campus_id,
         c.name AS course_name,
+        cc.campus_id,
         cp.name AS campus_name,
+        cc.modality,
         e.period_id,
         p.name AS period_name,
         e.status,
         e.enrollment_date,
+        e.notes,
         e.created_at,
         e.created_by,
+        EXISTS (
+          SELECT 1 FROM payments pay WHERE pay.enrollment_id = e.id
+        ) AS has_payments,
+        (
+          EXISTS (SELECT 1 FROM attendances att WHERE att.enrollment_id = e.id)
+          OR EXISTS (SELECT 1 FROM course_practice_attempts attempt WHERE attempt.enrollment_id = e.id)
+          OR EXISTS (
+            SELECT 1
+            FROM grades grade
+            JOIN assessments assessment ON assessment.id = grade.assessment_id
+            WHERE grade.student_id = e.student_id
+              AND assessment.course_campus_id = e.course_campus_id
+              AND assessment.period_id = e.period_id
+          )
+        ) AS has_academic_activity,
+        EXISTS (
+          SELECT 1
+          FROM student_transfer_requests transfer
+          WHERE transfer.source_enrollment_id = e.id
+            AND transfer.status = 'PENDING'
+        ) AS has_pending_transfer,
         TRIM(CONCAT(COALESCE(u.first_name, ''), CASE WHEN u.last_name IS NULL OR u.last_name = '' THEN '' ELSE ' ' END, COALESCE(u.last_name, ''))) AS created_by_name
       FROM enrollments e
       JOIN students s ON s.id = e.student_id
@@ -101,13 +144,37 @@ router.get(
         CONCAT(s.first_name, ' ', s.last_name) AS student_name,
         e.course_campus_id,
         c.name AS course_name,
+        cc.campus_id,
         cp.name AS campus_name,
+        cc.modality,
         e.period_id,
         p.name AS period_name,
         e.status,
         e.enrollment_date,
+        e.notes,
         e.created_at,
         e.created_by,
+        EXISTS (
+          SELECT 1 FROM payments pay WHERE pay.enrollment_id = e.id
+        ) AS has_payments,
+        (
+          EXISTS (SELECT 1 FROM attendances att WHERE att.enrollment_id = e.id)
+          OR EXISTS (SELECT 1 FROM course_practice_attempts attempt WHERE attempt.enrollment_id = e.id)
+          OR EXISTS (
+            SELECT 1
+            FROM grades grade
+            JOIN assessments assessment ON assessment.id = grade.assessment_id
+            WHERE grade.student_id = e.student_id
+              AND assessment.course_campus_id = e.course_campus_id
+              AND assessment.period_id = e.period_id
+          )
+        ) AS has_academic_activity,
+        EXISTS (
+          SELECT 1
+          FROM student_transfer_requests transfer
+          WHERE transfer.source_enrollment_id = e.id
+            AND transfer.status = 'PENDING'
+        ) AS has_pending_transfer,
         TRIM(CONCAT(COALESCE(u.first_name, ''), CASE WHEN u.last_name IS NULL OR u.last_name = '' THEN '' ELSE ' ' END, COALESCE(u.last_name, ''))) AS created_by_name
       FROM enrollments e
       JOIN students s ON s.id = e.student_id
@@ -137,13 +204,50 @@ router.post(
       period_id,
       enrollment_date = new Date().toISOString().slice(0, 10),
       status = 'ACTIVE',
+      notes = null,
     } = req.validated.body;
+    const campusScopeId = parseCampusScopeId(req);
+
+    const offeringResult = await query(
+      `SELECT cc.id, cc.campus_id
+       FROM course_campus cc
+       JOIN courses c ON c.id = cc.course_id
+       WHERE cc.id = $1
+         AND cc.is_active = TRUE
+         AND c.is_active = TRUE
+       LIMIT 1`,
+      [course_campus_id],
+    );
+
+    if (offeringResult.rowCount === 0) {
+      throw new ApiError(404, 'El curso seleccionado no existe o no está activo.');
+    }
+
+    if (campusScopeId && Number(offeringResult.rows[0].campus_id) !== Number(campusScopeId)) {
+      throw new ApiError(403, 'No puedes registrar matrículas fuera de tu sede activa.');
+    }
 
     const { rows } = await query(
-      `INSERT INTO enrollments (student_id, course_campus_id, period_id, enrollment_date, status, created_by)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING id, student_id, course_campus_id, period_id, enrollment_date, status, created_at`,
-      [student_id, course_campus_id, period_id, enrollment_date, status, req.user.id],
+      `INSERT INTO enrollments (
+         student_id,
+         course_campus_id,
+         period_id,
+         enrollment_date,
+         status,
+         notes,
+         created_by
+       )
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING id, student_id, course_campus_id, period_id, enrollment_date, status, notes, created_at`,
+      [
+        student_id,
+        course_campus_id,
+        period_id,
+        enrollment_date,
+        status,
+        normalizeOptionalText(notes),
+        req.user.id,
+      ],
     );
 
     if (status === 'ACTIVE') {
@@ -167,6 +271,190 @@ router.post(
     }
 
     return res.status(201).json({ message: 'Matrícula creada.', item: rows[0] });
+  }),
+);
+
+router.put(
+  '/:id',
+  authorizePermission('enrollments.manage'),
+  validate(enrollmentUpdateSchema),
+  asyncHandler(async (req, res) => {
+    const enrollmentId = req.validated.params.id;
+    const {
+      course_campus_id: courseCampusId,
+      period_id: periodId,
+      enrollment_date: enrollmentDate,
+      status,
+      notes = null,
+    } = req.validated.body;
+    const campusScopeId = parseCampusScopeId(req);
+
+    let updated;
+    try {
+      updated = await withTransaction(async (tx) => {
+        const currentResult = await tx.query(
+          `SELECT
+             e.id,
+             e.student_id,
+             e.course_campus_id,
+             e.period_id,
+             e.status,
+             cc.campus_id
+           FROM enrollments e
+           JOIN course_campus cc ON cc.id = e.course_campus_id
+           WHERE e.id = $1
+           FOR UPDATE OF e`,
+          [enrollmentId],
+        );
+
+        if (currentResult.rowCount === 0) {
+          throw new ApiError(404, 'Matrícula no encontrada.');
+        }
+
+        const current = currentResult.rows[0];
+        if (current.status === 'TRANSFERRED') {
+          throw new ApiError(409, 'Una matrícula trasladada ya no puede editarse.');
+        }
+
+        if (campusScopeId && Number(current.campus_id) !== Number(campusScopeId)) {
+          throw new ApiError(404, 'Matrícula no encontrada en tu sede activa.');
+        }
+
+        const targetOfferingResult = await tx.query(
+          `SELECT
+             cc.id,
+             cc.campus_id,
+             cc.is_active AS offering_is_active,
+             c.is_active AS course_is_active
+           FROM course_campus cc
+           JOIN courses c ON c.id = cc.course_id
+           WHERE cc.id = $1
+           LIMIT 1`,
+          [courseCampusId],
+        );
+
+        if (targetOfferingResult.rowCount === 0) {
+          throw new ApiError(404, 'El curso seleccionado no existe.');
+        }
+
+        const targetOffering = targetOfferingResult.rows[0];
+        const courseChanged = Number(current.course_campus_id) !== Number(courseCampusId);
+        const periodChanged = Number(current.period_id) !== Number(periodId);
+
+        if (courseChanged && (!targetOffering.offering_is_active || !targetOffering.course_is_active)) {
+          throw new ApiError(409, 'No se puede cambiar la matrícula a un curso inactivo.');
+        }
+
+        if (Number(targetOffering.campus_id) !== Number(current.campus_id)) {
+          throw new ApiError(
+            409,
+            'Para cambiar de sede utiliza el módulo de traslados. La edición de matrícula solo permite cursos de la misma sede.',
+          );
+        }
+
+        if (campusScopeId && Number(targetOffering.campus_id) !== Number(campusScopeId)) {
+          throw new ApiError(403, 'No puedes asignar cursos fuera de tu sede activa.');
+        }
+
+        if (courseChanged || periodChanged) {
+          const duplicateResult = await tx.query(
+            `SELECT id
+             FROM enrollments
+             WHERE student_id = $1
+               AND course_campus_id = $2
+               AND period_id = $3
+               AND id <> $4
+             LIMIT 1`,
+            [current.student_id, courseCampusId, periodId, enrollmentId],
+          );
+
+          if (duplicateResult.rowCount > 0) {
+            throw new ApiError(409, 'El alumno ya tiene una matrícula para ese curso y periodo.');
+          }
+
+          const blockersResult = await tx.query(
+            `SELECT
+               EXISTS (
+                 SELECT 1 FROM payments payment WHERE payment.enrollment_id = $1
+               ) AS has_payments,
+               EXISTS (
+                 SELECT 1 FROM attendances attendance WHERE attendance.enrollment_id = $1
+               ) AS has_attendance,
+               EXISTS (
+                 SELECT 1 FROM course_practice_attempts attempt WHERE attempt.enrollment_id = $1
+               ) AS has_practice_attempts,
+               EXISTS (
+                 SELECT 1
+                 FROM grades grade
+                 JOIN assessments assessment ON assessment.id = grade.assessment_id
+                 WHERE grade.student_id = $2
+                   AND assessment.course_campus_id = $3
+                   AND assessment.period_id = $4
+               ) AS has_grades,
+               EXISTS (
+                 SELECT 1
+                 FROM student_transfer_requests transfer
+                 WHERE transfer.source_enrollment_id = $1
+                   AND transfer.status = 'PENDING'
+               ) AS has_pending_transfer`,
+            [enrollmentId, current.student_id, current.course_campus_id, current.period_id],
+          );
+          const blockers = blockersResult.rows[0] || {};
+          const blockerLabels = [];
+          if (blockers.has_payments) blockerLabels.push('pagos emitidos');
+          if (blockers.has_attendance) blockerLabels.push('asistencias');
+          if (blockers.has_practice_attempts) blockerLabels.push('prácticas resueltas');
+          if (blockers.has_grades) blockerLabels.push('notas académicas');
+          if (blockers.has_pending_transfer) blockerLabels.push('un traslado pendiente');
+
+          if (blockerLabels.length > 0) {
+            throw new ApiError(
+              409,
+              `No se puede cambiar el curso o periodo porque la matrícula tiene ${blockerLabels.join(', ')}. Puedes editar la fecha, el estado y la nota sin cambiar el curso.`,
+            );
+          }
+        }
+
+        const updateResult = await tx.query(
+          `UPDATE enrollments
+           SET course_campus_id = $1,
+               period_id = $2,
+               enrollment_date = $3,
+               status = $4,
+               notes = $5,
+               updated_at = NOW()
+           WHERE id = $6
+           RETURNING id, student_id, course_campus_id, period_id, enrollment_date, status, notes, updated_at`,
+          [
+            courseCampusId,
+            periodId,
+            enrollmentDate,
+            status,
+            normalizeOptionalText(notes),
+            enrollmentId,
+          ],
+        );
+
+        if (status === 'ACTIVE') {
+          await tx.query(
+            `UPDATE students
+             SET assigned_campus_id = $1,
+                 updated_at = NOW()
+             WHERE id = $2`,
+            [targetOffering.campus_id, current.student_id],
+          );
+        }
+
+        return updateResult.rows[0];
+      });
+    } catch (error) {
+      if (error?.code === '23505') {
+        throw new ApiError(409, 'El alumno ya tiene una matrícula para ese curso y periodo.');
+      }
+      throw error;
+    }
+
+    return res.json({ message: 'Matrícula actualizada.', item: updated });
   }),
 );
 

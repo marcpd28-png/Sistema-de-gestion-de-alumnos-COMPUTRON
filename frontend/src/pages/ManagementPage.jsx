@@ -23,6 +23,7 @@ const createStudentDefaults = () => ({
   email: '',
   phone: '',
   address: '',
+  notes: '',
   no_guardian: false,
   guardian_first_name: '',
   guardian_last_name: '',
@@ -33,6 +34,7 @@ const createStudentDefaults = () => ({
   course_campus_id: '',
   period_id: '',
   enrollment_date: getTodayIsoDate(),
+  enrollment_notes: '',
   enrollment_fee_amount: '',
   installments_count: '4',
   installment_amount: '',
@@ -43,6 +45,23 @@ const createStudentDefaults = () => ({
   access_is_active: true,
   access_original_is_active: true,
   access_password: '',
+});
+
+const createEnrollmentEditDefaults = () => ({
+  student_name: '',
+  campus_id: '',
+  campus_name: '',
+  course_campus_id: '',
+  original_course_campus_id: '',
+  course_name: '',
+  modality: '',
+  period_id: '',
+  original_period_id: '',
+  enrollment_date: getTodayIsoDate(),
+  status: 'ACTIVE',
+  notes: '',
+  course_change_locked: false,
+  course_change_reason: '',
 });
 
 const teacherDefaults = {
@@ -116,6 +135,7 @@ const ENROLLMENT_STATUS_LABELS = {
   SUSPENDED: 'Suspendida',
   COMPLETED: 'Completada',
   CANCELED: 'Cancelada',
+  TRANSFERRED: 'Trasladada',
 };
 
 const normalizeOptional = (value) => {
@@ -357,12 +377,14 @@ export default function ManagementPage() {
   const paymentConceptsLoadAttemptedRef = useRef(false);
 
   const [studentForm, setStudentForm] = useState(createStudentDefaults);
+  const [enrollmentEditForm, setEnrollmentEditForm] = useState(createEnrollmentEditDefaults);
   const [teacherForm, setTeacherForm] = useState(createTeacherFormDefaults);
   const [courseForm, setCourseForm] = useState(createCourseDefaults);
   const [campusForm, setCampusForm] = useState(campusDefaults);
   const [periodForm, setPeriodForm] = useState(createPeriodDefaults);
 
   const [editingStudentId, setEditingStudentId] = useState(null);
+  const [editingEnrollmentId, setEditingEnrollmentId] = useState(null);
   const [editingTeacherId, setEditingTeacherId] = useState(null);
   const [editingCourseId, setEditingCourseId] = useState(null);
   const [editingCampusId, setEditingCampusId] = useState(null);
@@ -978,6 +1000,38 @@ export default function ManagementPage() {
     hasFullTeacherAssignmentsLoaded,
   ]);
 
+  useEffect(() => {
+    if (!isStudentsTabActive || !editingEnrollmentId || !canManageEnrollments) return;
+
+    if (canReadCourses && !loadingCourses && !hasFullCoursesLoaded) {
+      loadCourses();
+    }
+
+    if (canReadCampuses && !loadingCampuses && campuses.length === 0) {
+      loadCampuses();
+    }
+
+    if (canReadPeriods && !loadingPeriods && periods.length === 0) {
+      loadPeriods();
+    }
+  }, [
+    campuses.length,
+    canManageEnrollments,
+    canReadCampuses,
+    canReadCourses,
+    canReadPeriods,
+    editingEnrollmentId,
+    hasFullCoursesLoaded,
+    isStudentsTabActive,
+    loadCampuses,
+    loadCourses,
+    loadPeriods,
+    loadingCampuses,
+    loadingCourses,
+    loadingPeriods,
+    periods.length,
+  ]);
+
   const assignmentByOfferingId = useMemo(() => {
     const map = new Map();
     for (const assignment of teacherAssignments) {
@@ -1063,7 +1117,7 @@ export default function ManagementPage() {
         enrollment.period_name || ''
       } ${enrollment.status || ''} ${enrollment.enrollment_date || ''} ${enrollment.created_at || ''} ${
         enrollment.created_by_name || ''
-      }`
+      } ${enrollment.notes || ''}`
         .toLowerCase()
         .includes(term),
     );
@@ -1090,6 +1144,36 @@ export default function ManagementPage() {
 
     return options;
   }, [courses]);
+
+  const enrollmentEditOfferingOptions = useMemo(() => {
+    const campusId = String(enrollmentEditForm.campus_id || '');
+    const options = enrollmentOfferingOptions.filter(
+      (offering) => !campusId || String(offering.campus_id) === campusId,
+    );
+    const currentOfferingId = String(enrollmentEditForm.original_course_campus_id || '');
+
+    if (currentOfferingId && !options.some((offering) => String(offering.offering_id) === currentOfferingId)) {
+      options.unshift({
+        offering_id: Number(currentOfferingId),
+        campus_id: Number(enrollmentEditForm.campus_id || 0),
+        course_name: enrollmentEditForm.course_name || 'Curso actual',
+        campus_name: enrollmentEditForm.campus_name || 'Sede actual',
+        modality: enrollmentEditForm.modality || 'PRESENCIAL',
+        label: `${enrollmentEditForm.course_name || 'Curso actual'} - ${
+          enrollmentEditForm.campus_name || 'Sede actual'
+        } (${enrollmentEditForm.modality || 'PRESENCIAL'})`,
+      });
+    }
+
+    return options;
+  }, [
+    enrollmentEditForm.campus_id,
+    enrollmentEditForm.campus_name,
+    enrollmentEditForm.course_name,
+    enrollmentEditForm.modality,
+    enrollmentEditForm.original_course_campus_id,
+    enrollmentOfferingOptions,
+  ]);
 
   const enrollmentCampusOptions = useMemo(() => {
     if (campuses.length > 0) {
@@ -1437,6 +1521,11 @@ export default function ManagementPage() {
     setShowStudentForm(false);
   };
 
+  const resetEnrollmentEdit = () => {
+    setEnrollmentEditForm(createEnrollmentEditDefaults());
+    setEditingEnrollmentId(null);
+  };
+
   const toggleVariableInstallments = (enabled) => {
     setStudentForm((prev) => {
       const count = normalizeInstallmentsCount(prev.installments_count);
@@ -1522,6 +1611,7 @@ export default function ManagementPage() {
         email: normalizeOptional(studentForm.email),
         phone: normalizeOptional(studentForm.phone),
         address: normalizeOptional(studentForm.address),
+        notes: normalizeOptional(studentForm.notes),
       };
 
       if (editingStudentId) {
@@ -1641,6 +1731,7 @@ export default function ManagementPage() {
             period_id: resolvedPeriodId,
             enrollment_date: studentForm.enrollment_date || getTodayIsoDate(),
             status: 'ACTIVE',
+            notes: normalizeOptional(studentForm.enrollment_notes),
           };
         }
 
@@ -1730,8 +1821,78 @@ export default function ManagementPage() {
     }
   };
 
+  const submitEnrollmentEdit = async (event) => {
+    event.preventDefault();
+    if (!canManageEnrollments || !editingEnrollmentId) return;
+
+    if (!enrollmentEditForm.course_campus_id) {
+      toast.error('Selecciona el curso de la matrícula.');
+      return;
+    }
+
+    if (!enrollmentEditForm.period_id) {
+      toast.error('Selecciona el periodo de la matrícula.');
+      return;
+    }
+
+    setSaving(true);
+    try {
+      await api.put(`/enrollments/${editingEnrollmentId}`, {
+        course_campus_id: Number(enrollmentEditForm.course_campus_id),
+        period_id: Number(enrollmentEditForm.period_id),
+        enrollment_date: enrollmentEditForm.enrollment_date || getTodayIsoDate(),
+        status: enrollmentEditForm.status,
+        notes: normalizeOptional(enrollmentEditForm.notes),
+      });
+
+      toast.success('Matrícula actualizada correctamente.');
+      resetEnrollmentEdit();
+      await loadRecentEnrollments();
+    } catch (requestError) {
+      toast.error(
+        requestError.response?.data?.message ||
+          requestError.message ||
+          'No se pudo actualizar la matrícula.',
+      );
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const editEnrollment = (enrollment) => {
+    if (!canManageEnrollments || String(enrollment.status || '').toUpperCase() === 'TRANSFERRED') return;
+
+    const hasPayments = Boolean(enrollment.has_payments);
+    const hasAcademicActivity = Boolean(enrollment.has_academic_activity);
+    const hasPendingTransfer = Boolean(enrollment.has_pending_transfer);
+    const blockerLabels = [];
+    if (hasPayments) blockerLabels.push('pagos emitidos');
+    if (hasAcademicActivity) blockerLabels.push('actividad académica');
+    if (hasPendingTransfer) blockerLabels.push('un traslado pendiente');
+
+    resetStudentForm();
+    setEditingEnrollmentId(Number(enrollment.id));
+    setEnrollmentEditForm({
+      student_name: enrollment.student_name || '',
+      campus_id: String(enrollment.campus_id || ''),
+      campus_name: enrollment.campus_name || '',
+      course_campus_id: String(enrollment.course_campus_id || ''),
+      original_course_campus_id: String(enrollment.course_campus_id || ''),
+      course_name: enrollment.course_name || '',
+      modality: enrollment.modality || 'PRESENCIAL',
+      period_id: String(enrollment.period_id || ''),
+      original_period_id: String(enrollment.period_id || ''),
+      enrollment_date: toInputDate(enrollment.enrollment_date),
+      status: enrollment.status || 'ACTIVE',
+      notes: enrollment.notes || '',
+      course_change_locked: blockerLabels.length > 0,
+      course_change_reason: blockerLabels.join(', '),
+    });
+  };
+
   const editStudent = (student) => {
     if (!canManageStudents) return;
+    resetEnrollmentEdit();
     const parsedDocument = parseDocumentValue(student.document_number);
     setEditingStudentId(student.id);
     setStudentForm({
@@ -1743,6 +1904,7 @@ export default function ManagementPage() {
       email: student.email || '',
       phone: student.phone || '',
       address: student.address || '',
+      notes: student.notes || '',
       no_guardian: false,
       guardian_first_name: '',
       guardian_last_name: '',
@@ -1753,6 +1915,7 @@ export default function ManagementPage() {
       course_campus_id: '',
       period_id: defaultPeriodId,
       enrollment_date: getTodayIsoDate(),
+      enrollment_notes: '',
       enrollment_fee_amount: '',
       installments_count: '4',
       installment_amount: '',
@@ -2350,7 +2513,10 @@ export default function ManagementPage() {
                 type="button"
                 onClick={() => {
                   if (showStudentForm) resetStudentForm();
-                  else setShowStudentForm(true);
+                  else {
+                    resetEnrollmentEdit();
+                    setShowStudentForm(true);
+                  }
                 }}
                 className="rounded-xl bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-800"
               >
@@ -2377,6 +2543,144 @@ export default function ManagementPage() {
               }}
             />
           )}
+
+          {activeTab === 'students' && editingEnrollmentId && canManageEnrollments ? (
+            <form onSubmit={submitEnrollmentEdit} className="panel-soft space-y-4">
+              <div className="flex flex-wrap items-start justify-between gap-3">
+                <div>
+                  <p className="text-xs font-semibold uppercase tracking-wide text-accent-700">
+                    Editando matrícula #{editingEnrollmentId}
+                  </p>
+                  <h3 className="text-lg font-semibold text-primary-900">
+                    {enrollmentEditForm.student_name || 'Alumno'}
+                  </h3>
+                  <p className="text-xs text-primary-600">
+                    La sede permanece fija. Para cambiarla utiliza el módulo de traslados.
+                  </p>
+                </div>
+                <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
+                  {enrollmentEditForm.campus_name || 'Sede actual'}
+                </span>
+              </div>
+
+              {enrollmentEditForm.course_change_locked ? (
+                <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
+                  El curso y el periodo están protegidos porque esta matrícula tiene{' '}
+                  <strong>{enrollmentEditForm.course_change_reason}</strong>. Sí puedes modificar la fecha, el
+                  estado y la nota.
+                </div>
+              ) : (
+                <div className="rounded-xl border border-primary-100 bg-primary-50 px-4 py-3 text-sm text-primary-800">
+                  Puedes cambiar el curso dentro de la misma sede. Las cuotas pendientes conservarán sus montos
+                  actuales.
+                </div>
+              )}
+
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <label className="space-y-1 lg:col-span-2">
+                  <span className="text-xs font-semibold text-primary-700">Curso</span>
+                  <select
+                    className="app-input"
+                    value={enrollmentEditForm.course_campus_id}
+                    onChange={(event) =>
+                      setEnrollmentEditForm((prev) => ({ ...prev, course_campus_id: event.target.value }))
+                    }
+                    disabled={enrollmentEditForm.course_change_locked || loadingCourses}
+                    required
+                  >
+                    <option value="">Selecciona curso</option>
+                    {enrollmentEditOfferingOptions.map((offering) => (
+                      <option key={offering.offering_id} value={offering.offering_id}>
+                        {offering.course_name} ({offering.modality})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-primary-700">Periodo</span>
+                  <select
+                    className="app-input"
+                    value={enrollmentEditForm.period_id}
+                    onChange={(event) =>
+                      setEnrollmentEditForm((prev) => ({ ...prev, period_id: event.target.value }))
+                    }
+                    disabled={enrollmentEditForm.course_change_locked || loadingPeriods}
+                    required
+                  >
+                    <option value="">Selecciona periodo</option>
+                    {periods.map((period) => (
+                      <option key={period.id} value={period.id}>
+                        {period.name}{period.is_active ? '' : ' (Inactivo)'}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-primary-700">Fecha de matrícula</span>
+                  <input
+                    type="date"
+                    className="app-input"
+                    value={enrollmentEditForm.enrollment_date}
+                    onChange={(event) =>
+                      setEnrollmentEditForm((prev) => ({ ...prev, enrollment_date: event.target.value }))
+                    }
+                    required
+                  />
+                </label>
+
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-primary-700">Estado</span>
+                  <select
+                    className="app-input"
+                    value={enrollmentEditForm.status}
+                    onChange={(event) =>
+                      setEnrollmentEditForm((prev) => ({ ...prev, status: event.target.value }))
+                    }
+                  >
+                    <option value="ACTIVE">Activa</option>
+                    <option value="SUSPENDED">Suspendida</option>
+                    <option value="COMPLETED">Completada</option>
+                    <option value="CANCELED">Cancelada</option>
+                  </select>
+                </label>
+
+                <label className="space-y-1 sm:col-span-2 lg:col-span-3">
+                  <span className="text-xs font-semibold text-primary-700">Nota de matrícula (opcional)</span>
+                  <textarea
+                    className="app-input min-h-20 resize-y"
+                    maxLength={500}
+                    placeholder="Observaciones administrativas de esta matrícula"
+                    value={enrollmentEditForm.notes}
+                    onChange={(event) =>
+                      setEnrollmentEditForm((prev) => ({ ...prev, notes: event.target.value }))
+                    }
+                  />
+                  <span className="block text-right text-[11px] text-primary-500">
+                    {enrollmentEditForm.notes.length}/500
+                  </span>
+                </label>
+              </div>
+
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="submit"
+                  disabled={saving}
+                  className="rounded-xl bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {saving ? 'Guardando...' : 'Guardar matrícula'}
+                </button>
+                <button
+                  type="button"
+                  onClick={resetEnrollmentEdit}
+                  className="rounded-xl border border-primary-300 bg-white px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-primary-50"
+                >
+                  Cancelar
+                </button>
+              </div>
+            </form>
+          ) : null}
 
           {showStudentForm && canManageStudents ? (
             <form onSubmit={submitStudent} className="panel-soft space-y-3">
@@ -2451,6 +2755,19 @@ export default function ManagementPage() {
                   value={studentForm.address}
                   onChange={(event) => setStudentForm((prev) => ({ ...prev, address: event.target.value }))}
                 />
+                <label className="space-y-1 sm:col-span-2 lg:col-span-4">
+                  <span className="text-xs font-semibold text-primary-700">Nota del alumno (opcional)</span>
+                  <textarea
+                    className="app-input min-h-20 resize-y"
+                    maxLength={500}
+                    placeholder="Observaciones generales sobre el alumno"
+                    value={studentForm.notes}
+                    onChange={(event) => setStudentForm((prev) => ({ ...prev, notes: event.target.value }))}
+                  />
+                  <span className="block text-right text-[11px] text-primary-500">
+                    {studentForm.notes.length}/500
+                  </span>
+                </label>
               </div>
 
               {editingStudentId ? (
@@ -2684,6 +3001,24 @@ export default function ManagementPage() {
                         </label>
                       </div>
 
+                      <label className="block space-y-1">
+                        <span className="text-xs font-semibold text-primary-700">
+                          Nota de matrícula (opcional)
+                        </span>
+                        <textarea
+                          className="app-input min-h-20 resize-y"
+                          maxLength={500}
+                          placeholder="Observaciones administrativas de esta matrícula"
+                          value={studentForm.enrollment_notes}
+                          onChange={(event) =>
+                            setStudentForm((prev) => ({ ...prev, enrollment_notes: event.target.value }))
+                          }
+                        />
+                        <span className="block text-right text-[11px] text-primary-500">
+                          {studentForm.enrollment_notes.length}/500
+                        </span>
+                      </label>
+
                       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
                         <label className="space-y-1">
                           <span className="text-xs font-semibold text-primary-700">Importe matrícula</span>
@@ -2894,7 +3229,9 @@ export default function ManagementPage() {
                       <th className="pb-2 pr-3">Sede</th>
                       <th className="pb-2 pr-3">Periodo</th>
                       <th className="pb-2 pr-3">Registrado por</th>
-                      <th className="pb-2">Estado</th>
+                      <th className="pb-2 pr-3">Estado</th>
+                      <th className="pb-2 pr-3">Nota</th>
+                      {canManageEnrollments ? <th className="pb-2">Acciones</th> : null}
                     </tr>
                   </thead>
                   <tbody>
@@ -2906,7 +3243,7 @@ export default function ManagementPage() {
                         <td className="py-2 pr-3">{enrollment.campus_name || '-'}</td>
                         <td className="py-2 pr-3">{enrollment.period_name || '-'}</td>
                         <td className="py-2 pr-3">{enrollment.created_by_name || 'Sistema'}</td>
-                        <td className="py-2">
+                        <td className="py-2 pr-3">
                           <span
                             className={`rounded-full px-2 py-1 text-xs font-semibold ${
                               String(enrollment.status || '').toUpperCase() === 'ACTIVE'
@@ -2917,11 +3254,28 @@ export default function ManagementPage() {
                             {toEnrollmentStatusLabel(enrollment.status)}
                           </span>
                         </td>
+                        <td className="max-w-56 py-2 pr-3 text-primary-700">
+                          <span className="block truncate" title={enrollment.notes || ''}>
+                            {enrollment.notes || '-'}
+                          </span>
+                        </td>
+                        {canManageEnrollments ? (
+                          <td className="py-2">
+                            <button
+                              type="button"
+                              onClick={() => editEnrollment(enrollment)}
+                              disabled={String(enrollment.status || '').toUpperCase() === 'TRANSFERRED'}
+                              className="rounded-lg border border-primary-300 px-2 py-1 text-xs font-semibold text-primary-800 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              EDITAR
+                            </button>
+                          </td>
+                        ) : null}
                       </tr>
                     ))}
                     {!loadingEnrollments && filteredRecentEnrollments.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-4 text-center text-sm text-primary-600">
+                        <td colSpan={canManageEnrollments ? 9 : 8} className="py-4 text-center text-sm text-primary-600">
                           No se encontraron matrículas recientes.
                         </td>
                       </tr>
@@ -2945,6 +3299,7 @@ export default function ManagementPage() {
                       <th className="pb-2 pr-3">Nro. doc.</th>
                       <th className="pb-2 pr-3">Correo</th>
                       <th className="pb-2 pr-3">Teléfono</th>
+                      <th className="pb-2 pr-3">Nota</th>
                       <th className="pb-2">Acciones</th>
                     </tr>
                   </thead>
@@ -2960,6 +3315,11 @@ export default function ManagementPage() {
                           <td className="py-2 pr-3">{parsedDocument.document_number || '-'}</td>
                           <td className="py-2 pr-3">{student.email || '-'}</td>
                           <td className="py-2 pr-3">{student.phone || '-'}</td>
+                          <td className="max-w-56 py-2 pr-3 text-primary-700">
+                            <span className="block truncate" title={student.notes || ''}>
+                              {student.notes || '-'}
+                            </span>
+                          </td>
                           <td className="py-2">
                             <div className="flex flex-wrap gap-2">
                               {canManageStudents ? (
@@ -2987,7 +3347,7 @@ export default function ManagementPage() {
                     })}
                     {!loadingStudents && students.length === 0 ? (
                       <tr>
-                        <td colSpan={6} className="py-4 text-center text-sm text-primary-600">
+                        <td colSpan={7} className="py-4 text-center text-sm text-primary-600">
                           No se encontraron alumnos.
                         </td>
                       </tr>

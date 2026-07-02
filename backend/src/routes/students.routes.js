@@ -33,6 +33,7 @@ const enrollmentPayloadSchema = z.object({
   period_id: z.number().int().positive(),
   enrollment_date: dateString.optional(),
   status: z.enum(['ACTIVE', 'SUSPENDED', 'COMPLETED', 'CANCELED']).optional().default('ACTIVE'),
+  notes: z.string().trim().max(500).nullable().optional(),
 });
 
 const guardianPayloadSchema = z.object({
@@ -53,6 +54,7 @@ const studentSchema = z.object({
     email: z.string().email().nullable().optional(),
     phone: z.string().min(6).max(30).nullable().optional(),
     address: z.string().max(240).nullable().optional(),
+    notes: z.string().trim().max(500).nullable().optional(),
     guardian_links: z
       .array(
         z.object({
@@ -316,6 +318,7 @@ router.get(
           COALESCE(s.email, ''),
           COALESCE(s.phone, ''),
           COALESCE(s.address, ''),
+          COALESCE(s.notes, ''),
           COALESCE(cp_assigned.name, '')
         ) ILIKE '%' || $1 || '%'
         OR EXISTS (
@@ -333,7 +336,8 @@ router.get(
               cp_search.name,
               ap_search.name,
               COALESCE(cc_search.modality, ''),
-              COALESCE(e_search.status, '')
+              COALESCE(e_search.status, ''),
+              COALESCE(e_search.notes, '')
             ) ILIKE '%' || $1 || '%'
         )
         OR EXISTS (
@@ -468,11 +472,12 @@ router.get(
              s.first_name,
              s.last_name,
              s.document_number,
-             s.birth_date,
-             s.email,
-           s.phone,
-             s.address,
-             s.assigned_campus_id,
+	             s.birth_date,
+	             s.email,
+	             s.phone,
+	             s.address,
+	             s.notes,
+	             s.assigned_campus_id,
              cp_assigned.name AS assigned_campus_name_fallback,
              s.status,
              s.user_id,
@@ -492,9 +497,10 @@ router.get(
            fs.document_number,
            fs.birth_date,
            fs.email,
-           fs.phone,
-           fs.address,
-           fs.status,
+	           fs.phone,
+	           fs.address,
+	           fs.notes,
+	           fs.status,
            fs.user_id,
            fs.access_is_active,
            fs.created_by,
@@ -534,9 +540,10 @@ router.get(
            fs.document_number,
            fs.birth_date,
            fs.email,
-           fs.phone,
-           fs.address,
-           fs.assigned_campus_id,
+	           fs.phone,
+	           fs.address,
+	           fs.notes,
+	           fs.assigned_campus_id,
            fs.assigned_campus_name_fallback,
            fs.status,
            fs.user_id,
@@ -568,9 +575,10 @@ router.get(
              s.document_number,
              s.birth_date,
              s.email,
-             s.phone,
-             s.address,
-             s.assigned_campus_id,
+	             s.phone,
+	             s.address,
+	             s.notes,
+	             s.assigned_campus_id,
              cp_assigned.name AS assigned_campus_name_fallback,
              s.status,
              s.user_id,
@@ -588,9 +596,10 @@ router.get(
            fs.document_number,
            fs.birth_date,
            fs.email,
-           fs.phone,
-           fs.address,
-           fs.status,
+	           fs.phone,
+	           fs.address,
+	           fs.notes,
+	           fs.status,
            fs.user_id,
            fs.access_is_active,
            fs.created_by,
@@ -630,9 +639,10 @@ router.get(
            fs.document_number,
            fs.birth_date,
            fs.email,
-           fs.phone,
-           fs.address,
-           fs.assigned_campus_id,
+	           fs.phone,
+	           fs.address,
+	           fs.notes,
+	           fs.assigned_campus_id,
            fs.assigned_campus_name_fallback,
            fs.status,
            fs.user_id,
@@ -1555,10 +1565,11 @@ router.get(
           s.last_name,
           s.document_number,
           s.birth_date,
-          s.email,
-          s.phone,
-          s.address,
-          s.assigned_campus_id,
+	          s.email,
+	          s.phone,
+	          s.address,
+	          s.notes,
+	          s.assigned_campus_id,
           cp_assigned.name AS assigned_campus_name,
           cp_assigned.city AS assigned_campus_city,
           s.user_id,
@@ -1590,9 +1601,10 @@ router.get(
     const enrollmentResult = await query(
       `SELECT
           e.id,
-          e.status,
-          e.enrollment_date,
-          e.period_id,
+	          e.status,
+	          e.enrollment_date,
+	          e.notes,
+	          e.period_id,
           p.name AS period_name,
           p.start_date AS period_start_date,
           p.end_date AS period_end_date,
@@ -1652,6 +1664,7 @@ router.post(
       email = null,
       phone = null,
       address = null,
+      notes = null,
       guardian_links = [],
       guardian_payload = null,
       no_guardian = true,
@@ -1744,12 +1757,13 @@ router.post(
            email,
            phone,
            address,
+           notes,
            assigned_campus_id,
            created_by,
            user_id
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
-         RETURNING id, first_name, last_name, document_number, birth_date, email, phone, address, assigned_campus_id, created_by, user_id, status, created_at`,
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+         RETURNING id, first_name, last_name, document_number, birth_date, email, phone, address, notes, assigned_campus_id, created_by, user_id, status, created_at`,
         [
           first_name,
           last_name,
@@ -1758,6 +1772,7 @@ router.post(
           studentUserEmail,
           phone,
           address,
+          normalizeOptionalText(notes),
           initialAssignedCampusId,
           req.user.id,
           studentUser.id,
@@ -1816,8 +1831,16 @@ router.post(
       let createdEnrollment = null;
       if (enrollment) {
         const enrollmentResult = await tx.query(
-          `INSERT INTO enrollments (student_id, course_campus_id, period_id, enrollment_date, status, created_by)
-           VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6)
+          `INSERT INTO enrollments (
+             student_id,
+             course_campus_id,
+             period_id,
+             enrollment_date,
+             status,
+             notes,
+             created_by
+           )
+           VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7)
            RETURNING id`,
           [
             student.id,
@@ -1825,6 +1848,7 @@ router.post(
             enrollment.period_id,
             enrollment.enrollment_date || null,
             enrollment.status || 'ACTIVE',
+            normalizeOptionalText(enrollment.notes),
             req.user.id,
           ],
         );
@@ -1835,6 +1859,7 @@ router.post(
               e.id,
               e.status,
               e.enrollment_date,
+              e.notes,
               e.student_id,
               e.course_campus_id,
               e.period_id,
@@ -1896,8 +1921,16 @@ router.put(
   ),
   asyncHandler(async (req, res) => {
     const { id } = req.validated.params;
-    const { first_name, last_name, document_number, birth_date, email = null, phone = null, address = null } =
-      req.validated.body;
+    const {
+      first_name,
+      last_name,
+      document_number,
+      birth_date,
+      email = null,
+      phone = null,
+      address = null,
+      notes = null,
+    } = req.validated.body;
     const normalizedEmail = normalizeOptionalEmail(email);
     const normalizedDocumentNumber = normalizeDocumentNumber(document_number);
 
@@ -1971,13 +2004,24 @@ router.put(
              last_name = $2,
              document_number = $3,
              birth_date = $4,
-             email = $5,
-             phone = $6,
-             address = $7,
-             updated_at = NOW()
-         WHERE id = $8
-         RETURNING id, first_name, last_name, document_number, birth_date, email, phone, address, user_id, status, updated_at`,
-        [first_name, last_name, normalizedDocumentNumber, birth_date, resolvedEmail, phone, address, id],
+	             email = $5,
+	             phone = $6,
+	             address = $7,
+	             notes = $8,
+	             updated_at = NOW()
+	         WHERE id = $9
+	         RETURNING id, first_name, last_name, document_number, birth_date, email, phone, address, notes, user_id, status, updated_at`,
+        [
+          first_name,
+          last_name,
+          normalizedDocumentNumber,
+          birth_date,
+          resolvedEmail,
+          phone,
+          address,
+          normalizeOptionalText(notes),
+          id,
+        ],
       );
 
       return updateResult.rows[0];

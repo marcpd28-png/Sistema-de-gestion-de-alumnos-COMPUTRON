@@ -23,6 +23,7 @@ const getEmptyStudent = () => ({
   email: '',
   phone: '',
   address: '',
+  notes: '',
   no_guardian: false,
   guardian_id: '',
   guardian_first_name: '',
@@ -34,6 +35,7 @@ const getEmptyStudent = () => ({
   course_campus_id: '',
   period_id: '',
   enrollment_date: getTodayIsoDate(),
+  enrollment_notes: '',
 });
 
 const emptyGuardian = {
@@ -318,6 +320,7 @@ export default function StudentsPage() {
         email: studentForm.email || null,
         phone: studentForm.phone || null,
         address: studentForm.address || null,
+        notes: studentForm.notes.trim() || null,
       };
 
       const isEditing = Boolean(editingStudentId);
@@ -376,6 +379,7 @@ export default function StudentsPage() {
             course_campus_id: Number(studentForm.course_campus_id),
             period_id: Number(studentForm.period_id),
             enrollment_date: studentForm.enrollment_date || undefined,
+            notes: studentForm.enrollment_notes.trim() || null,
           };
         }
 
@@ -425,6 +429,7 @@ export default function StudentsPage() {
       email: student.email || '',
       phone: student.phone || '',
       address: student.address || '',
+      notes: student.notes || '',
       no_guardian: false,
       guardian_id: '',
       guardian_first_name: '',
@@ -436,6 +441,7 @@ export default function StudentsPage() {
       course_campus_id: '',
       period_id: '',
       enrollment_date: getTodayIsoDate(),
+      enrollment_notes: '',
     });
   };
 
@@ -695,7 +701,16 @@ export default function StudentsPage() {
                   value={studentForm.address}
                   onChange={(event) => setStudentForm((prev) => ({ ...prev, address: event.target.value }))}
                 />
-                <div />
+                <label className="space-y-1">
+                  <span className="text-xs font-semibold text-primary-700">Nota del alumno (opcional)</span>
+                  <textarea
+                    className="app-input min-h-20 resize-y"
+                    maxLength={500}
+                    placeholder="Observaciones generales sobre el alumno"
+                    value={studentForm.notes}
+                    onChange={(event) => setStudentForm((prev) => ({ ...prev, notes: event.target.value }))}
+                  />
+                </label>
               </div>
 
               {!editingStudentId ? (
@@ -849,6 +864,20 @@ export default function StudentsPage() {
                             />
                           </label>
                         </div>
+                        <label className="block space-y-1">
+                          <span className="text-xs font-semibold text-primary-700">
+                            Nota de matrícula (opcional)
+                          </span>
+                          <textarea
+                            className="app-input min-h-20 resize-y"
+                            maxLength={500}
+                            placeholder="Observaciones administrativas de esta matrícula"
+                            value={studentForm.enrollment_notes}
+                            onChange={(event) =>
+                              setStudentForm((prev) => ({ ...prev, enrollment_notes: event.target.value }))
+                            }
+                          />
+                        </label>
                         <p className="text-xs text-primary-600">
                           La fecha de matrícula es el día en que se registra la inscripción del alumno.
                         </p>
@@ -896,7 +925,8 @@ export default function StudentsPage() {
                   <th className="pb-2 pr-3">Contacto</th>
                   <th className="pb-2 pr-3">Sede asignada</th>
                   <th className="pb-2 pr-3">Registrado por</th>
-                  <th className="pb-2">Apoderados</th>
+                  <th className="pb-2 pr-3">Apoderados</th>
+                  <th className="pb-2 pr-3">Nota</th>
                   {showStudentActions ? <th className="pb-2">Acciones</th> : null}
                 </tr>
               </thead>
@@ -921,10 +951,15 @@ export default function StudentsPage() {
                       ) : null}
                     </td>
                     <td className="py-2 pr-3">{student.created_by_name || '-'}</td>
-                    <td className="py-2">
+                    <td className="py-2 pr-3">
                       {student.guardians?.length
                         ? student.guardians.map((guardian) => guardian.name).join(', ')
                         : 'Sin apoderado'}
+                    </td>
+                    <td className="max-w-56 py-2 pr-3 text-primary-700">
+                      <span className="block truncate" title={student.notes || ''}>
+                        {student.notes || '-'}
+                      </span>
                     </td>
                     {showStudentActions ? (
                       <td className="py-2">
@@ -964,7 +999,7 @@ export default function StudentsPage() {
                 })}
                 {!studentLoading && students.length === 0 ? (
                   <tr>
-                    <td colSpan={showStudentActions ? 8 : 7} className="py-4 text-center text-sm text-primary-600">
+                    <td colSpan={showStudentActions ? 9 : 8} className="py-4 text-center text-sm text-primary-600">
                       No se encontraron alumnos con ese criterio.
                     </td>
                   </tr>
