@@ -1254,6 +1254,8 @@ export default function ManagementPage() {
     [filteredTeacherAssignmentOfferingOptions, teacherForm.assignment_course_campus_id],
   );
 
+  const selectedTeacherAssignmentScheduleBlocks = selectedTeacherAssignmentOffering?.schedule_blocks || [];
+
   const teacherAssignmentRequiresCampusOverrideReason =
     Boolean(teacherForm.base_campus_id) &&
     Boolean(selectedTeacherAssignmentOffering?.campus_id) &&
@@ -1307,9 +1309,47 @@ export default function ManagementPage() {
     setTeacherForm((prev) => ({
       ...prev,
       assignment_course_campus_id: '',
+      assignment_schedule_info: '',
       assignment_campus_override_reason: '',
     }));
   }, [filteredTeacherAssignmentOfferingOptions, teacherForm.assignment_course_campus_id]);
+
+  useEffect(() => {
+    if (!isTeachersTabActive || !showTeacherForm || editingTeacherId || !canManageAssignments) return;
+    if (!teacherForm.create_initial_assignment) return;
+
+    setTeacherForm((prev) => {
+      if (!prev.assignment_course_campus_id) {
+        return prev.assignment_schedule_info ? { ...prev, assignment_schedule_info: '' } : prev;
+      }
+
+      const selectedOffering = filteredTeacherAssignmentOfferingOptions.find(
+        (offering) => String(offering.offering_id) === String(prev.assignment_course_campus_id),
+      );
+      const scheduleBlocks = selectedOffering?.schedule_blocks || [];
+
+      if (scheduleBlocks.length === 0) {
+        return prev.assignment_schedule_info ? { ...prev, assignment_schedule_info: '' } : prev;
+      }
+
+      if (prev.assignment_schedule_info && scheduleBlocks.includes(prev.assignment_schedule_info)) {
+        return prev;
+      }
+
+      const defaultScheduleInfo = getDefaultScheduleInfoFromBlocks(scheduleBlocks);
+      return prev.assignment_schedule_info === defaultScheduleInfo
+        ? prev
+        : { ...prev, assignment_schedule_info: defaultScheduleInfo };
+    });
+  }, [
+    canManageAssignments,
+    editingTeacherId,
+    filteredTeacherAssignmentOfferingOptions,
+    isTeachersTabActive,
+    showTeacherForm,
+    teacherForm.assignment_course_campus_id,
+    teacherForm.create_initial_assignment,
+  ]);
 
   useEffect(() => {
     if (teacherAssignmentRequiresCampusOverrideReason || !teacherForm.assignment_campus_override_reason) return;
@@ -2112,6 +2152,12 @@ export default function ManagementPage() {
         return;
       }
 
+      if (selectedTeacherAssignmentScheduleBlocks.length > 1 && !teacherForm.assignment_schedule_info) {
+        toast.error('Selecciona el bloque horario que dictará el docente.');
+        setSaving(false);
+        return;
+      }
+
       if (teacherAssignmentRequiresCampusOverrideReason && !teacherForm.assignment_campus_override_reason.trim()) {
         toast.error('Indica el motivo si el curso inicial se dictará en una sede distinta a la sede base del docente.');
         setSaving(false);
@@ -2487,7 +2533,7 @@ export default function ManagementPage() {
     if (!canManageCourses) return;
     const offering = getPrimaryOffering(course);
     const assignment = offering ? assignmentByOfferingId.get(String(offering.offering_id)) : null;
-    const sourceScheduleInfo = assignment?.schedule_info || offering?.schedule_info || '';
+    const sourceScheduleInfo = offering?.schedule_info || assignment?.schedule_info || '';
     const parsedSchedules = parseCourseSchedule(sourceScheduleInfo);
 
     setEditingCourseId(course.id);
@@ -3327,7 +3373,7 @@ export default function ManagementPage() {
                             <strong>Bloque elegido:</strong> {studentForm.schedule_info || '-'}
                           </p>
                           <p>
-                            <strong>Horarios del curso:</strong> {selectedEnrollmentAssignment?.schedule_info || selectedEnrollmentOffering.schedule_info || '-'}
+                            <strong>Horarios del curso:</strong> {selectedEnrollmentOffering.schedule_info || selectedEnrollmentAssignment?.schedule_info || '-'}
                           </p>
                           <p>
                             <strong>Docente:</strong> {selectedEnrollmentAssignment?.teacher_name || 'Por asignar'}
@@ -3733,6 +3779,7 @@ export default function ManagementPage() {
                                 ...prev,
                                 assignment_campus_id: event.target.value,
                                 assignment_course_campus_id: '',
+                                assignment_schedule_info: '',
                                 assignment_campus_override_reason: '',
                               }))
                             }
@@ -3764,6 +3811,10 @@ export default function ManagementPage() {
                             setTeacherForm((prev) => ({
                               ...prev,
                               assignment_course_campus_id: event.target.value,
+                              assignment_schedule_info: getDefaultScheduleInfoForOfferingId(
+                                event.target.value,
+                                filteredTeacherAssignmentOfferingOptions,
+                              ),
                               assignment_campus_override_reason: '',
                             }))
                           }
@@ -3811,14 +3862,31 @@ export default function ManagementPage() {
 
                       <label className="space-y-1">
                         <span className="text-xs font-semibold text-primary-700">Horario / turno</span>
-                        <input
+                        <select
                           className="app-input"
-                          placeholder="Ej. Lun-Mie-Vie 7:00 pm a 9:00 pm"
                           value={teacherForm.assignment_schedule_info}
                           onChange={(event) =>
                             setTeacherForm((prev) => ({ ...prev, assignment_schedule_info: event.target.value }))
                           }
-                        />
+                          disabled={
+                            !teacherForm.assignment_course_campus_id ||
+                            selectedTeacherAssignmentScheduleBlocks.length === 0
+                          }
+                          required={selectedTeacherAssignmentScheduleBlocks.length > 1}
+                        >
+                          <option value="">
+                            {!teacherForm.assignment_course_campus_id
+                              ? 'Elige curso primero'
+                              : selectedTeacherAssignmentScheduleBlocks.length === 0
+                                ? 'Sin bloques registrados'
+                                : 'Bloque horario'}
+                          </option>
+                          {selectedTeacherAssignmentScheduleBlocks.map((block, index) => (
+                            <option key={`${block}-${index}`} value={block}>
+                              Bloque #{index + 1}: {block}
+                            </option>
+                          ))}
+                        </select>
                       </label>
 
                       {selectedTeacherAssignmentOffering ? (
@@ -3826,6 +3894,11 @@ export default function ManagementPage() {
                           Se asignará el curso <span className="font-semibold">{selectedTeacherAssignmentOffering.course_name}</span> en{' '}
                           <span className="font-semibold">{selectedTeacherAssignmentOffering.campus_name}</span>
                           {' '}({selectedTeacherAssignmentOffering.modality}).
+                          {selectedTeacherAssignmentOffering.schedule_info ? (
+                            <span className="mt-1 block">
+                              Horarios configurados: <span className="font-semibold">{selectedTeacherAssignmentOffering.schedule_info}</span>
+                            </span>
+                          ) : null}
                         </div>
                       ) : null}
 
@@ -4650,7 +4723,7 @@ export default function ManagementPage() {
                     offering?.modality === 'VIRTUAL' ? 'REMOTO'
                       : offering?.modality === 'HIBRIDO' ? 'HIBRIDO'
                       : offering?.modality === 'PRESENCIAL' ? 'PRESENCIAL' : '-';
-                  const scheduleInfo = assignment?.schedule_info || offering?.schedule_info || '-';
+                  const scheduleInfo = offering?.schedule_info || assignment?.schedule_info || '-';
                   const fee = offering?.monthly_fee;
 
                   return (
