@@ -423,12 +423,16 @@ CREATE TABLE IF NOT EXISTS enrollments (
   status VARCHAR(20) NOT NULL DEFAULT 'ACTIVE'
     CHECK (status IN ('ACTIVE', 'SUSPENDED', 'COMPLETED', 'CANCELED', 'TRANSFERRED')),
   enrollment_date DATE NOT NULL DEFAULT CURRENT_DATE,
+  schedule_info VARCHAR(240),
   notes VARCHAR(500),
   created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   UNIQUE (student_id, course_campus_id, period_id)
 );
+
+ALTER TABLE enrollments
+ADD COLUMN IF NOT EXISTS schedule_info VARCHAR(240);
 
 DO $$
 BEGIN

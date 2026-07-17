@@ -157,6 +157,16 @@ const ensureStudentAndEnrollmentNotes = async () => {
   }
 };
 
+const ensureEnrollmentScheduleInfo = async () => {
+  const enrollmentsExistsResult = await query(`SELECT to_regclass('public.enrollments') AS table_name`);
+
+  if (!enrollmentsExistsResult.rows[0]?.table_name) {
+    return;
+  }
+
+  await query(`ALTER TABLE enrollments ADD COLUMN IF NOT EXISTS schedule_info VARCHAR(240)`);
+};
+
 const ensureAlumnoRole = async () => {
   const existsResult = await query(`SELECT to_regclass('public.roles') AS table_name`);
   const tableExists = Boolean(existsResult.rows[0]?.table_name);
@@ -1227,6 +1237,7 @@ const runBootMigrations = async () => {
   await ensureStudentsUserLink();
   await ensureStudentsAssignedCampusColumn();
   await ensureStudentAndEnrollmentNotes();
+  await ensureEnrollmentScheduleInfo();
   await ensureAlumnoRole();
   await ensureTeacherBaseCampusColumn();
   await ensureUserCampusesTable();

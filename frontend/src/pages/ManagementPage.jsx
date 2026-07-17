@@ -32,6 +32,7 @@ const createStudentDefaults = () => ({
   guardian_document_number: '',
   enrollment_campus_id: '',
   course_campus_id: '',
+  schedule_info: '',
   period_id: '',
   enrollment_date: getTodayIsoDate(),
   enrollment_notes: '',
@@ -55,6 +56,8 @@ const createEnrollmentEditDefaults = () => ({
   original_course_campus_id: '',
   course_name: '',
   modality: '',
+  schedule_info: '',
+  offering_schedule_info: '',
   period_id: '',
   original_period_id: '',
   enrollment_date: getTodayIsoDate(),
@@ -263,6 +266,15 @@ const getCourseScheduleInfo = (schedules) => {
     })
     .join(' | ');
 };
+
+const getScheduleBlocks = (scheduleInfo) =>
+  String(scheduleInfo || '')
+    .split('|')
+    .map((block) => block.trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
+
+const getDefaultScheduleInfoFromBlocks = (scheduleBlocks = []) =>
+  scheduleBlocks.length === 1 ? scheduleBlocks[0] : '';
 
 const timeToMinutes = (value) => {
   const match = String(value || '').match(/^([01]\d|2[0-3]):([0-5]\d)$/);
@@ -1117,6 +1129,7 @@ export default function ManagementPage() {
         enrollment.period_name || ''
       } ${enrollment.status || ''} ${enrollment.enrollment_date || ''} ${enrollment.created_at || ''} ${
         enrollment.created_by_name || ''
+      } ${enrollment.schedule_info || ''
       } ${enrollment.notes || ''}`
         .toLowerCase()
         .includes(term),
@@ -1137,6 +1150,7 @@ export default function ManagementPage() {
           modality: offering.modality || 'PRESENCIAL',
           monthly_fee: offering.monthly_fee,
           schedule_info: offering.schedule_info || '',
+          schedule_blocks: getScheduleBlocks(offering.schedule_info),
           label: `${course.name} - ${offering.campus_name} (${offering.modality || 'PRESENCIAL'})`,
         });
       }
@@ -1159,6 +1173,10 @@ export default function ManagementPage() {
         course_name: enrollmentEditForm.course_name || 'Curso actual',
         campus_name: enrollmentEditForm.campus_name || 'Sede actual',
         modality: enrollmentEditForm.modality || 'PRESENCIAL',
+        schedule_info: enrollmentEditForm.offering_schedule_info || enrollmentEditForm.schedule_info || '',
+        schedule_blocks: getScheduleBlocks(
+          enrollmentEditForm.offering_schedule_info || enrollmentEditForm.schedule_info,
+        ),
         label: `${enrollmentEditForm.course_name || 'Curso actual'} - ${
           enrollmentEditForm.campus_name || 'Sede actual'
         } (${enrollmentEditForm.modality || 'PRESENCIAL'})`,
@@ -1171,7 +1189,9 @@ export default function ManagementPage() {
     enrollmentEditForm.campus_name,
     enrollmentEditForm.course_name,
     enrollmentEditForm.modality,
+    enrollmentEditForm.offering_schedule_info,
     enrollmentEditForm.original_course_campus_id,
+    enrollmentEditForm.schedule_info,
     enrollmentOfferingOptions,
   ]);
 
@@ -1324,6 +1344,26 @@ export default function ManagementPage() {
     [enrollmentOfferingOptions, studentForm.course_campus_id],
   );
 
+  const getDefaultScheduleInfoForOfferingId = useCallback(
+    (offeringId, options = enrollmentOfferingOptions) => {
+      const offering = options.find((item) => String(item.offering_id) === String(offeringId));
+      return getDefaultScheduleInfoFromBlocks(offering?.schedule_blocks || []);
+    },
+    [enrollmentOfferingOptions],
+  );
+
+  const selectedEnrollmentScheduleBlocks = selectedEnrollmentOffering?.schedule_blocks || [];
+
+  const selectedEnrollmentEditOffering = useMemo(
+    () =>
+      enrollmentEditOfferingOptions.find(
+        (offering) => String(offering.offering_id) === String(enrollmentEditForm.course_campus_id),
+      ) || null,
+    [enrollmentEditForm.course_campus_id, enrollmentEditOfferingOptions],
+  );
+
+  const selectedEnrollmentEditScheduleBlocks = selectedEnrollmentEditOffering?.schedule_blocks || [];
+
   const selectedEnrollmentAssignment = useMemo(
     () => assignmentByOfferingId.get(String(studentForm.course_campus_id)) || null,
     [assignmentByOfferingId, studentForm.course_campus_id],
@@ -1465,8 +1505,13 @@ export default function ManagementPage() {
       const currentCourseId = String(prev.course_campus_id || '');
       const keepSelectedCourse = !currentCourseId || validOfferingIds.has(currentCourseId);
       const nextCourseId = keepSelectedCourse ? prev.course_campus_id : '';
+      const nextScheduleInfo = keepSelectedCourse ? prev.schedule_info : '';
 
-      if (currentCampusId === nextCampusId && currentCourseId === String(nextCourseId || '')) {
+      if (
+        currentCampusId === nextCampusId &&
+        currentCourseId === String(nextCourseId || '') &&
+        prev.schedule_info === nextScheduleInfo
+      ) {
         return prev;
       }
 
@@ -1474,6 +1519,7 @@ export default function ManagementPage() {
         ...prev,
         enrollment_campus_id: nextCampusId,
         course_campus_id: nextCourseId,
+        schedule_info: nextScheduleInfo,
       };
     });
   }, [
@@ -1483,6 +1529,37 @@ export default function ManagementPage() {
     enrollmentOfferingOptions,
     lockedEnrollmentCampusId,
     studentForm.enrollment_campus_id,
+  ]);
+
+  useEffect(() => {
+    if (editingStudentId || !canManageEnrollments) return;
+
+    setStudentForm((prev) => {
+      if (!prev.course_campus_id) {
+        return prev.schedule_info ? { ...prev, schedule_info: '' } : prev;
+      }
+
+      const selectedOffering = enrollmentOfferingOptions.find(
+        (offering) => String(offering.offering_id) === String(prev.course_campus_id),
+      );
+      const scheduleBlocks = selectedOffering?.schedule_blocks || [];
+
+      if (scheduleBlocks.length === 0) {
+        return prev.schedule_info ? { ...prev, schedule_info: '' } : prev;
+      }
+
+      if (prev.schedule_info && scheduleBlocks.includes(prev.schedule_info)) {
+        return prev;
+      }
+
+      const defaultScheduleInfo = getDefaultScheduleInfoFromBlocks(scheduleBlocks);
+      return prev.schedule_info === defaultScheduleInfo ? prev : { ...prev, schedule_info: defaultScheduleInfo };
+    });
+  }, [
+    canManageEnrollments,
+    editingStudentId,
+    enrollmentOfferingOptions,
+    studentForm.course_campus_id,
   ]);
 
   useEffect(() => {
@@ -1687,6 +1764,19 @@ export default function ManagementPage() {
             throw new Error('El curso seleccionado no pertenece a la sede elegida.');
           }
 
+          const scheduleBlocks = selectedOffering?.schedule_blocks || [];
+          if (scheduleBlocks.length > 1 && !studentForm.schedule_info) {
+            throw new Error('Selecciona el bloque horario para la matrícula.');
+          }
+
+          if (
+            studentForm.schedule_info &&
+            scheduleBlocks.length > 0 &&
+            !scheduleBlocks.includes(studentForm.schedule_info)
+          ) {
+            throw new Error('El bloque horario seleccionado no pertenece al curso elegido.');
+          }
+
           const parsedEnrollmentFeeAmount = Number(studentForm.enrollment_fee_amount || 0);
           if (!Number.isFinite(parsedEnrollmentFeeAmount) || parsedEnrollmentFeeAmount < 0) {
             throw new Error('El importe de matrícula debe ser un número válido mayor o igual a 0.');
@@ -1730,6 +1820,7 @@ export default function ManagementPage() {
             course_campus_id: Number(studentForm.course_campus_id),
             period_id: resolvedPeriodId,
             enrollment_date: studentForm.enrollment_date || getTodayIsoDate(),
+            schedule_info: studentForm.schedule_info || null,
             status: 'ACTIVE',
             notes: normalizeOptional(studentForm.enrollment_notes),
           };
@@ -1835,6 +1926,11 @@ export default function ManagementPage() {
       return;
     }
 
+    if (selectedEnrollmentEditScheduleBlocks.length > 1 && !enrollmentEditForm.schedule_info) {
+      toast.error('Selecciona el bloque horario de la matrícula.');
+      return;
+    }
+
     setSaving(true);
     try {
       await api.put(`/enrollments/${editingEnrollmentId}`, {
@@ -1842,6 +1938,7 @@ export default function ManagementPage() {
         period_id: Number(enrollmentEditForm.period_id),
         enrollment_date: enrollmentEditForm.enrollment_date || getTodayIsoDate(),
         status: enrollmentEditForm.status,
+        schedule_info: enrollmentEditForm.schedule_info || null,
         notes: normalizeOptional(enrollmentEditForm.notes),
       });
 
@@ -1880,6 +1977,8 @@ export default function ManagementPage() {
       original_course_campus_id: String(enrollment.course_campus_id || ''),
       course_name: enrollment.course_name || '',
       modality: enrollment.modality || 'PRESENCIAL',
+      schedule_info: enrollment.schedule_info || '',
+      offering_schedule_info: enrollment.offering_schedule_info || enrollment.schedule_info || '',
       period_id: String(enrollment.period_id || ''),
       original_period_id: String(enrollment.period_id || ''),
       enrollment_date: toInputDate(enrollment.enrollment_date),
@@ -1913,6 +2012,7 @@ export default function ManagementPage() {
       guardian_document_number: '',
       enrollment_campus_id: '',
       course_campus_id: '',
+      schedule_info: '',
       period_id: defaultPeriodId,
       enrollment_date: getTodayIsoDate(),
       enrollment_notes: '',
@@ -2567,7 +2667,7 @@ export default function ManagementPage() {
                 <div className="rounded-xl border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-900">
                   El curso y el periodo están protegidos porque esta matrícula tiene{' '}
                   <strong>{enrollmentEditForm.course_change_reason}</strong>. Sí puedes modificar la fecha, el
-                  estado y la nota.
+                  horario, el estado y la nota.
                 </div>
               ) : (
                 <div className="rounded-xl border border-primary-100 bg-primary-50 px-4 py-3 text-sm text-primary-800">
@@ -2583,7 +2683,14 @@ export default function ManagementPage() {
                     className="app-input"
                     value={enrollmentEditForm.course_campus_id}
                     onChange={(event) =>
-                      setEnrollmentEditForm((prev) => ({ ...prev, course_campus_id: event.target.value }))
+                      setEnrollmentEditForm((prev) => ({
+                        ...prev,
+                        course_campus_id: event.target.value,
+                        schedule_info: getDefaultScheduleInfoForOfferingId(
+                          event.target.value,
+                          enrollmentEditOfferingOptions,
+                        ),
+                      }))
                     }
                     disabled={enrollmentEditForm.course_change_locked || loadingCourses}
                     required
@@ -2592,6 +2699,32 @@ export default function ManagementPage() {
                     {enrollmentEditOfferingOptions.map((offering) => (
                       <option key={offering.offering_id} value={offering.offering_id}>
                         {offering.course_name} ({offering.modality})
+                      </option>
+                    ))}
+                  </select>
+                </label>
+
+                <label className="space-y-1 lg:col-span-2">
+                  <span className="text-xs font-semibold text-primary-700">Bloque horario</span>
+                  <select
+                    className="app-input"
+                    value={enrollmentEditForm.schedule_info}
+                    onChange={(event) =>
+                      setEnrollmentEditForm((prev) => ({ ...prev, schedule_info: event.target.value }))
+                    }
+                    disabled={!enrollmentEditForm.course_campus_id || selectedEnrollmentEditScheduleBlocks.length === 0}
+                    required={selectedEnrollmentEditScheduleBlocks.length > 1}
+                  >
+                    <option value="">
+                      {!enrollmentEditForm.course_campus_id
+                        ? 'Selecciona primero el curso'
+                        : selectedEnrollmentEditScheduleBlocks.length === 0
+                          ? 'Sin bloques registrados'
+                          : 'Selecciona bloque'}
+                    </option>
+                    {selectedEnrollmentEditScheduleBlocks.map((block, index) => (
+                      <option key={`${block}-${index}`} value={block}>
+                        Bloque #{index + 1}: {block}
                       </option>
                     ))}
                   </select>
@@ -2929,6 +3062,7 @@ export default function ManagementPage() {
                                   ...prev,
                                   enrollment_campus_id: event.target.value,
                                   course_campus_id: '',
+                                  schedule_info: '',
                                 }))
                               }
                               required
@@ -2951,7 +3085,11 @@ export default function ManagementPage() {
                             className="app-input"
                             value={studentForm.course_campus_id}
                             onChange={(event) =>
-                              setStudentForm((prev) => ({ ...prev, course_campus_id: event.target.value }))
+                              setStudentForm((prev) => ({
+                                ...prev,
+                                course_campus_id: event.target.value,
+                                schedule_info: getDefaultScheduleInfoForOfferingId(event.target.value),
+                              }))
                             }
                             disabled={canSelectEnrollmentCampus && !studentForm.enrollment_campus_id}
                             required
@@ -2964,6 +3102,32 @@ export default function ManagementPage() {
                             {filteredEnrollmentOfferingOptions.map((offering) => (
                               <option key={offering.offering_id} value={offering.offering_id}>
                                 {offering.course_name} ({offering.modality})
+                              </option>
+                            ))}
+                          </select>
+                        </label>
+
+                        <label className="space-y-1 lg:col-span-2">
+                          <span className="text-xs font-semibold text-primary-700">Bloque horario</span>
+                          <select
+                            className="app-input"
+                            value={studentForm.schedule_info}
+                            onChange={(event) =>
+                              setStudentForm((prev) => ({ ...prev, schedule_info: event.target.value }))
+                            }
+                            disabled={!studentForm.course_campus_id || selectedEnrollmentScheduleBlocks.length === 0}
+                            required={selectedEnrollmentScheduleBlocks.length > 1}
+                          >
+                            <option value="">
+                              {!studentForm.course_campus_id
+                                ? 'Selecciona primero el curso'
+                                : selectedEnrollmentScheduleBlocks.length === 0
+                                  ? 'Sin bloques registrados'
+                                  : 'Selecciona bloque'}
+                            </option>
+                            {selectedEnrollmentScheduleBlocks.map((block, index) => (
+                              <option key={`${block}-${index}`} value={block}>
+                                Bloque #{index + 1}: {block}
                               </option>
                             ))}
                           </select>
@@ -3160,7 +3324,10 @@ export default function ManagementPage() {
                             {selectedEnrollmentOffering.modality})
                           </p>
                           <p>
-                            <strong>Horario:</strong> {selectedEnrollmentAssignment?.schedule_info || selectedEnrollmentOffering.schedule_info || '-'}
+                            <strong>Bloque elegido:</strong> {studentForm.schedule_info || '-'}
+                          </p>
+                          <p>
+                            <strong>Horarios del curso:</strong> {selectedEnrollmentAssignment?.schedule_info || selectedEnrollmentOffering.schedule_info || '-'}
                           </p>
                           <p>
                             <strong>Docente:</strong> {selectedEnrollmentAssignment?.teacher_name || 'Por asignar'}
@@ -3227,6 +3394,7 @@ export default function ManagementPage() {
                       <th className="pb-2 pr-3">Alumno</th>
                       <th className="pb-2 pr-3">Curso</th>
                       <th className="pb-2 pr-3">Sede</th>
+                      <th className="pb-2 pr-3">Horario</th>
                       <th className="pb-2 pr-3">Periodo</th>
                       <th className="pb-2 pr-3">Registrado por</th>
                       <th className="pb-2 pr-3">Estado</th>
@@ -3241,6 +3409,11 @@ export default function ManagementPage() {
                         <td className="py-2 pr-3 font-medium">{enrollment.student_name || '-'}</td>
                         <td className="py-2 pr-3">{enrollment.course_name || '-'}</td>
                         <td className="py-2 pr-3">{enrollment.campus_name || '-'}</td>
+                        <td className="max-w-64 py-2 pr-3 text-primary-700">
+                          <span className="block truncate" title={enrollment.schedule_info || ''}>
+                            {enrollment.schedule_info || '-'}
+                          </span>
+                        </td>
                         <td className="py-2 pr-3">{enrollment.period_name || '-'}</td>
                         <td className="py-2 pr-3">{enrollment.created_by_name || 'Sistema'}</td>
                         <td className="py-2 pr-3">
@@ -3275,7 +3448,7 @@ export default function ManagementPage() {
                     ))}
                     {!loadingEnrollments && filteredRecentEnrollments.length === 0 ? (
                       <tr>
-                        <td colSpan={canManageEnrollments ? 9 : 8} className="py-4 text-center text-sm text-primary-600">
+                        <td colSpan={canManageEnrollments ? 10 : 9} className="py-4 text-center text-sm text-primary-600">
                           No se encontraron matrículas recientes.
                         </td>
                       </tr>

@@ -8,6 +8,7 @@ const validate = require('../middlewares/validate');
 const { authenticate, authorizePermission } = require('../middlewares/auth');
 const { userHasPermission, invalidateUserPermissionCache } = require('../services/permissions.service');
 const { parseCampusScopeId } = require('../utils/campusScope');
+const { resolveEnrollmentScheduleInfo } = require('../utils/scheduleBlocks');
 const {
   decorateEnrollmentWithCertificateEligibility,
   getCertificateEligibility,
@@ -33,6 +34,7 @@ const enrollmentPayloadSchema = z.object({
   period_id: z.number().int().positive(),
   enrollment_date: dateString.optional(),
   status: z.enum(['ACTIVE', 'SUSPENDED', 'COMPLETED', 'CANCELED']).optional().default('ACTIVE'),
+  schedule_info: z.string().trim().max(240).nullable().optional(),
   notes: z.string().trim().max(500).nullable().optional(),
 });
 
@@ -698,7 +700,7 @@ router.get(
          cp.id AS campus_id,
          cp.name AS campus_name,
          cc.modality,
-         COALESCE(ta.schedule_info, cc.schedule_info) AS schedule_info,
+         COALESCE(e.schedule_info, ta.schedule_info, cc.schedule_info) AS schedule_info,
          ap.name AS period_name,
          ap.start_date,
          ap.end_date,
@@ -1687,15 +1689,31 @@ router.post(
       }
 
       let initialAssignedCampusId = null;
+      let resolvedEnrollmentScheduleInfo = null;
       if (enrollment?.course_campus_id) {
         const assignedCampusResult = await tx.query(
-          `SELECT campus_id
-           FROM course_campus
-           WHERE id = $1
+          `SELECT cc.campus_id, cc.schedule_info, cc.is_active AS offering_is_active, c.is_active AS course_is_active
+           FROM course_campus cc
+           JOIN courses c ON c.id = cc.course_id
+           WHERE cc.id = $1
            LIMIT 1`,
           [enrollment.course_campus_id],
         );
+
+        if (assignedCampusResult.rowCount === 0) {
+          throw new ApiError(404, 'El curso seleccionado no existe.');
+        }
+
+        const assignedOffering = assignedCampusResult.rows[0];
+        if (!assignedOffering.offering_is_active || !assignedOffering.course_is_active) {
+          throw new ApiError(409, 'No se puede matricular al alumno en un curso inactivo.');
+        }
+
         initialAssignedCampusId = assignedCampusResult.rows[0]?.campus_id || null;
+        resolvedEnrollmentScheduleInfo = resolveEnrollmentScheduleInfo(
+          assignedOffering.schedule_info,
+          enrollment.schedule_info,
+        );
       }
 
       const duplicatedDocumentResult = await tx.query(
@@ -1837,10 +1855,11 @@ router.post(
              period_id,
              enrollment_date,
              status,
+             schedule_info,
              notes,
              created_by
            )
-           VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7)
+           VALUES ($1, $2, $3, COALESCE($4, CURRENT_DATE), $5, $6, $7, $8)
            RETURNING id`,
           [
             student.id,
@@ -1848,6 +1867,7 @@ router.post(
             enrollment.period_id,
             enrollment.enrollment_date || null,
             enrollment.status || 'ACTIVE',
+            resolvedEnrollmentScheduleInfo,
             normalizeOptionalText(enrollment.notes),
             req.user.id,
           ],
@@ -1863,6 +1883,7 @@ router.post(
               e.student_id,
               e.course_campus_id,
               e.period_id,
+              e.schedule_info,
               p.name AS period_name,
               c.name AS course_name,
               cp.name AS campus_name,

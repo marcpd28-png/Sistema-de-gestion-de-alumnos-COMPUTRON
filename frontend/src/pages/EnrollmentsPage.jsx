@@ -14,6 +14,7 @@ const getTodayIsoDate = () => {
 const createEnrollmentDefaults = () => ({
   student_id: '',
   course_campus_id: '',
+  schedule_info: '',
   period_id: '',
   enrollment_date: getTodayIsoDate(),
 });
@@ -33,6 +34,7 @@ const createQuickEnrollmentDefaults = () => ({
   guardian_document_number: '',
   guardian_relationship: 'APODERADO',
   course_campus_id: '',
+  schedule_info: '',
   period_id: '',
   enrollment_date: getTodayIsoDate(),
 });
@@ -50,6 +52,12 @@ const createPeriodDefaults = () => ({
   start_date: getTodayIsoDate(),
   end_date: getTodayIsoDate(),
 });
+
+const getScheduleBlocks = (scheduleInfo) =>
+  String(scheduleInfo || '')
+    .split('|')
+    .map((block) => block.trim().replace(/\s+/g, ' '))
+    .filter(Boolean);
 
 export default function EnrollmentsPage() {
   const { hasPermission } = useAuth();
@@ -167,11 +175,30 @@ export default function EnrollmentsPage() {
         all.push({
           id: offering.offering_id,
           label: `${course.name} - ${offering.campus_name} (${offering.modality || 'PRESENCIAL'})`,
+          schedule_info: offering.schedule_info || '',
+          schedule_blocks: getScheduleBlocks(offering.schedule_info),
         });
       }
     }
     return all;
   }, [courses]);
+
+  const findOffering = useCallback(
+    (offeringId) => offerings.find((offering) => String(offering.id) === String(offeringId)) || null,
+    [offerings],
+  );
+
+  const getDefaultScheduleInfo = useCallback(
+    (offeringId) => {
+      const scheduleBlocks = findOffering(offeringId)?.schedule_blocks || [];
+      return scheduleBlocks.length === 1 ? scheduleBlocks[0] : '';
+    },
+    [findOffering],
+  );
+
+  const selectedEnrollmentScheduleBlocks = findOffering(enrollmentForm.course_campus_id)?.schedule_blocks || [];
+  const selectedQuickEnrollmentScheduleBlocks =
+    findOffering(quickEnrollmentForm.course_campus_id)?.schedule_blocks || [];
 
   const quickEnrollmentAgeLabel = useMemo(
     () => formatAgeLabel(calculateAgeFromBirthDate(quickEnrollmentForm.student_birth_date)),
@@ -235,11 +262,16 @@ export default function EnrollmentsPage() {
     setError('');
 
     try {
+      if (selectedEnrollmentScheduleBlocks.length > 1 && !enrollmentForm.schedule_info) {
+        throw new Error('Selecciona el bloque horario para esta matrícula.');
+      }
+
       const response = await api.post('/enrollments', {
         student_id: Number(enrollmentForm.student_id),
         course_campus_id: Number(enrollmentForm.course_campus_id),
         period_id: Number(enrollmentForm.period_id),
         enrollment_date: enrollmentForm.enrollment_date || undefined,
+        schedule_info: enrollmentForm.schedule_info || null,
       });
       const createdEnrollmentId = Number(response.data?.item?.id || 0);
 
@@ -252,7 +284,7 @@ export default function EnrollmentsPage() {
         await openEnrollmentReceipt(createdEnrollmentId, { silent: true, format: receiptFormat });
       }
     } catch (requestError) {
-      setError(requestError.response?.data?.message || 'No se pudo crear la matricula.');
+      setError(requestError.response?.data?.message || requestError.message || 'No se pudo crear la matricula.');
     }
   };
 
@@ -264,6 +296,10 @@ export default function EnrollmentsPage() {
     setError('');
 
     try {
+      if (selectedQuickEnrollmentScheduleBlocks.length > 1 && !quickEnrollmentForm.schedule_info) {
+        throw new Error('Selecciona el bloque horario para esta matrícula.');
+      }
+
       const guardianResponse = await api.post('/guardians', {
         first_name: quickEnrollmentForm.guardian_first_name.trim(),
         last_name: quickEnrollmentForm.guardian_last_name.trim(),
@@ -295,6 +331,7 @@ export default function EnrollmentsPage() {
           course_campus_id: Number(quickEnrollmentForm.course_campus_id),
           period_id: Number(quickEnrollmentForm.period_id),
           enrollment_date: quickEnrollmentForm.enrollment_date || undefined,
+          schedule_info: quickEnrollmentForm.schedule_info || null,
           status: 'ACTIVE',
         },
       });
@@ -604,13 +641,17 @@ export default function EnrollmentsPage() {
                 />
               </div>
 
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                <h3 className="text-sm font-semibold text-primary-900 sm:col-span-2 lg:col-span-3">Datos de matrícula</h3>
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                <h3 className="text-sm font-semibold text-primary-900 sm:col-span-2 lg:col-span-4">Datos de matrícula</h3>
                 <select
                   className="app-input"
                   value={quickEnrollmentForm.course_campus_id}
                   onChange={(event) =>
-                    setQuickEnrollmentForm((prev) => ({ ...prev, course_campus_id: event.target.value }))
+                    setQuickEnrollmentForm((prev) => ({
+                      ...prev,
+                      course_campus_id: event.target.value,
+                      schedule_info: getDefaultScheduleInfo(event.target.value),
+                    }))
                   }
                   required
                 >
@@ -618,6 +659,29 @@ export default function EnrollmentsPage() {
                   {offerings.map((offering) => (
                     <option key={offering.id} value={offering.id}>
                       {offering.label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="app-input"
+                  value={quickEnrollmentForm.schedule_info}
+                  onChange={(event) =>
+                    setQuickEnrollmentForm((prev) => ({ ...prev, schedule_info: event.target.value }))
+                  }
+                  disabled={!quickEnrollmentForm.course_campus_id || selectedQuickEnrollmentScheduleBlocks.length === 0}
+                  required={selectedQuickEnrollmentScheduleBlocks.length > 1}
+                >
+                  <option value="">
+                    {!quickEnrollmentForm.course_campus_id
+                      ? 'Elige curso primero'
+                      : selectedQuickEnrollmentScheduleBlocks.length === 0
+                        ? 'Sin bloques registrados'
+                        : 'Bloque horario'}
+                  </option>
+                  {selectedQuickEnrollmentScheduleBlocks.map((block, index) => (
+                    <option key={`${block}-${index}`} value={block}>
+                      Bloque #{index + 1}: {block}
                     </option>
                   ))}
                 </select>
@@ -675,7 +739,7 @@ export default function EnrollmentsPage() {
           {showEnrollmentForm && canManageEnrollments ? (
             <form onSubmit={submitEnrollment} className="panel-soft space-y-3">
               <h2 className="text-lg font-semibold text-primary-900">Registrar matricula</h2>
-              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
                 <select
                   className="app-input"
                   value={enrollmentForm.student_id}
@@ -693,13 +757,40 @@ export default function EnrollmentsPage() {
                 <select
                   className="app-input"
                   value={enrollmentForm.course_campus_id}
-                  onChange={(event) => setEnrollmentForm((prev) => ({ ...prev, course_campus_id: event.target.value }))}
+                  onChange={(event) =>
+                    setEnrollmentForm((prev) => ({
+                      ...prev,
+                      course_campus_id: event.target.value,
+                      schedule_info: getDefaultScheduleInfo(event.target.value),
+                    }))
+                  }
                   required
                 >
                   <option value="">Curso / sede</option>
                   {offerings.map((offering) => (
                     <option key={offering.id} value={offering.id}>
                       {offering.label}
+                    </option>
+                  ))}
+                </select>
+
+                <select
+                  className="app-input"
+                  value={enrollmentForm.schedule_info}
+                  onChange={(event) => setEnrollmentForm((prev) => ({ ...prev, schedule_info: event.target.value }))}
+                  disabled={!enrollmentForm.course_campus_id || selectedEnrollmentScheduleBlocks.length === 0}
+                  required={selectedEnrollmentScheduleBlocks.length > 1}
+                >
+                  <option value="">
+                    {!enrollmentForm.course_campus_id
+                      ? 'Elige curso primero'
+                      : selectedEnrollmentScheduleBlocks.length === 0
+                        ? 'Sin bloques registrados'
+                        : 'Bloque horario'}
+                  </option>
+                  {selectedEnrollmentScheduleBlocks.map((block, index) => (
+                    <option key={`${block}-${index}`} value={block}>
+                      Bloque #{index + 1}: {block}
                     </option>
                   ))}
                 </select>
@@ -749,6 +840,7 @@ export default function EnrollmentsPage() {
                     <th className="pb-2 pr-3">Alumno</th>
                     <th className="pb-2 pr-3">Curso</th>
                     <th className="pb-2 pr-3">Sede</th>
+                    <th className="pb-2 pr-3">Horario</th>
                     <th className="pb-2 pr-3">Periodo</th>
                     <th className="pb-2 pr-3">Estado</th>
                     <th className="pb-2">Accion</th>
@@ -760,6 +852,7 @@ export default function EnrollmentsPage() {
                       <td className="py-2 pr-3 font-medium">{enrollment.student_name}</td>
                       <td className="py-2 pr-3">{enrollment.course_name}</td>
                       <td className="py-2 pr-3">{enrollment.campus_name}</td>
+                      <td className="py-2 pr-3">{enrollment.schedule_info || '-'}</td>
                       <td className="py-2 pr-3">{enrollment.period_name}</td>
                       <td className="py-2 pr-3">{enrollment.status}</td>
                       <td className="py-2">

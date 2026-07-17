@@ -6,6 +6,7 @@ const ApiError = require('../utils/apiError');
 const validate = require('../middlewares/validate');
 const { authenticate, authorizePermission } = require('../middlewares/auth');
 const { parseCampusScopeId } = require('../utils/campusScope');
+const { resolveEnrollmentScheduleInfo } = require('../utils/scheduleBlocks');
 const {
   buildReceiptHtml,
   normalizeReceiptFormat,
@@ -22,6 +23,7 @@ const enrollmentSchema = z.object({
     period_id: z.number().int().positive(),
     enrollment_date: dateString.optional(),
     status: z.enum(ENROLLMENT_STATUSES).optional(),
+    schedule_info: z.string().trim().max(240).nullable().optional(),
     notes: z.string().trim().max(500).nullable().optional(),
   }),
   params: z.object({}).optional(),
@@ -34,6 +36,7 @@ const enrollmentUpdateSchema = z.object({
     period_id: z.number().int().positive(),
     enrollment_date: dateString,
     status: z.enum(ENROLLMENT_STATUSES),
+    schedule_info: z.string().trim().max(240).nullable().optional(),
     notes: z.string().trim().max(500).nullable().optional(),
   }),
   params: z.object({ id: z.coerce.number().int().positive() }),
@@ -89,6 +92,8 @@ router.get(
         p.name AS period_name,
         e.status,
         e.enrollment_date,
+        COALESCE(e.schedule_info, cc.schedule_info) AS schedule_info,
+        cc.schedule_info AS offering_schedule_info,
         e.notes,
         e.created_at,
         e.created_by,
@@ -151,6 +156,8 @@ router.get(
         p.name AS period_name,
         e.status,
         e.enrollment_date,
+        COALESCE(e.schedule_info, cc.schedule_info) AS schedule_info,
+        cc.schedule_info AS offering_schedule_info,
         e.notes,
         e.created_at,
         e.created_by,
@@ -204,12 +211,13 @@ router.post(
       period_id,
       enrollment_date = new Date().toISOString().slice(0, 10),
       status = 'ACTIVE',
+      schedule_info = null,
       notes = null,
     } = req.validated.body;
     const campusScopeId = parseCampusScopeId(req);
 
     const offeringResult = await query(
-      `SELECT cc.id, cc.campus_id
+      `SELECT cc.id, cc.campus_id, cc.schedule_info
        FROM course_campus cc
        JOIN courses c ON c.id = cc.course_id
        WHERE cc.id = $1
@@ -227,6 +235,11 @@ router.post(
       throw new ApiError(403, 'No puedes registrar matrículas fuera de tu sede activa.');
     }
 
+    const resolvedScheduleInfo = resolveEnrollmentScheduleInfo(
+      offeringResult.rows[0].schedule_info,
+      schedule_info,
+    );
+
     const { rows } = await query(
       `INSERT INTO enrollments (
          student_id,
@@ -234,17 +247,19 @@ router.post(
          period_id,
          enrollment_date,
          status,
+         schedule_info,
          notes,
          created_by
        )
-       VALUES ($1, $2, $3, $4, $5, $6, $7)
-       RETURNING id, student_id, course_campus_id, period_id, enrollment_date, status, notes, created_at`,
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       RETURNING id, student_id, course_campus_id, period_id, enrollment_date, status, schedule_info, notes, created_at`,
       [
         student_id,
         course_campus_id,
         period_id,
         enrollment_date,
         status,
+        resolvedScheduleInfo,
         normalizeOptionalText(notes),
         req.user.id,
       ],
@@ -285,8 +300,10 @@ router.put(
       period_id: periodId,
       enrollment_date: enrollmentDate,
       status,
+      schedule_info: scheduleInfo,
       notes = null,
     } = req.validated.body;
+    const scheduleInfoProvided = Object.prototype.hasOwnProperty.call(req.validated.body, 'schedule_info');
     const campusScopeId = parseCampusScopeId(req);
 
     let updated;
@@ -299,6 +316,7 @@ router.put(
              e.course_campus_id,
              e.period_id,
              e.status,
+             e.schedule_info,
              cc.campus_id
            FROM enrollments e
            JOIN course_campus cc ON cc.id = e.course_campus_id
@@ -324,6 +342,7 @@ router.put(
           `SELECT
              cc.id,
              cc.campus_id,
+             cc.schedule_info,
              cc.is_active AS offering_is_active,
              c.is_active AS course_is_active
            FROM course_campus cc
@@ -415,21 +434,28 @@ router.put(
           }
         }
 
+        const resolvedScheduleInfo = resolveEnrollmentScheduleInfo(
+          targetOffering.schedule_info,
+          scheduleInfoProvided ? scheduleInfo : current.schedule_info,
+        );
+
         const updateResult = await tx.query(
           `UPDATE enrollments
            SET course_campus_id = $1,
                period_id = $2,
                enrollment_date = $3,
                status = $4,
-               notes = $5,
+               schedule_info = $5,
+               notes = $6,
                updated_at = NOW()
-           WHERE id = $6
-           RETURNING id, student_id, course_campus_id, period_id, enrollment_date, status, notes, updated_at`,
+           WHERE id = $7
+           RETURNING id, student_id, course_campus_id, period_id, enrollment_date, status, schedule_info, notes, updated_at`,
           [
             courseCampusId,
             periodId,
             enrollmentDate,
             status,
+            resolvedScheduleInfo,
             normalizeOptionalText(notes),
             enrollmentId,
           ],
@@ -542,7 +568,7 @@ router.get(
          cp.name AS campus_name,
          p.name AS period_name,
          cc.modality,
-         cc.schedule_info,
+         COALESCE(e.schedule_info, cc.schedule_info) AS schedule_info,
          cc.monthly_fee,
          CONCAT(u.first_name, ' ', u.last_name) AS created_by_name
        FROM enrollments e
@@ -611,6 +637,7 @@ router.get(
         enrollment.course_name,
         enrollment.period_name,
         enrollment.modality,
+        enrollment.schedule_info,
         enrollment.campus_name,
       ]
         .filter(Boolean)
