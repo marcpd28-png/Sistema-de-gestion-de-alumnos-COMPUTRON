@@ -12,21 +12,21 @@ export default function DashboardCampusScopeCard({
 }) {
   return (
     <>
-      <div className="flex flex-wrap items-start justify-between gap-3">
+      <div className="app-page-header">
         <div>
-          <h1 className="text-2xl font-semibold text-primary-900">Panel de control</h1>
-          <p className="text-sm text-primary-700">Resumen operativo y financiero del instituto.</p>
+          <h1 className="app-title">Panel de control</h1>
+          <p className="app-subtitle">Resumen operativo, académico y financiero del instituto.</p>
         </div>
         {canViewCampuses ? (
-          <div className="flex w-full flex-col items-start gap-2 sm:w-auto sm:items-end">
+          <div className="app-toolbar">
             <button
               type="button"
               onClick={onToggleSelector}
-              className="rounded-xl border border-primary-300 bg-white px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-primary-50"
+              className="btn-secondary"
             >
               Seleccionar sede
             </button>
-            <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
+            <span className="app-pill">
               Sede activa: {selectedCampusName}
             </span>
           </div>
@@ -55,7 +55,7 @@ export default function DashboardCampusScopeCard({
           <button
             type="button"
             onClick={onApply}
-            className="rounded-xl bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700"
+            className="btn-primary"
           >
             Aplicar sede
           </button>
@@ -63,7 +63,7 @@ export default function DashboardCampusScopeCard({
             <button
               type="button"
               onClick={onClear}
-              className="rounded-xl border border-primary-300 bg-white px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-primary-50"
+              className="btn-secondary"
             >
               Ver todo
             </button>

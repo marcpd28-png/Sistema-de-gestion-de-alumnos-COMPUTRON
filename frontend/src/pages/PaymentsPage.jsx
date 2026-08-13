@@ -997,16 +997,14 @@ function StaffPaymentsPage() {
   }
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="app-page">
+      <div className="app-page-header">
         <div>
-          <h1 className="text-2xl font-semibold text-primary-900">Pagos simplificados</h1>
-          <p className="text-sm text-primary-700">
-            Selecciona alumno, valida sus cuotas pendientes y registra pago con cálculo automático.
-          </p>
+          <h1 className="app-title">Pagos</h1>
+          <p className="app-subtitle">Selecciona alumno, valida cuotas pendientes y registra el comprobante.</p>
         </div>
-        <div className="flex flex-wrap gap-2">
-          <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
+        <div className="app-toolbar">
+          <span className="app-pill">
             {payments.length} pagos cargados
           </span>
           {canManagePayments ? (
@@ -1020,7 +1018,7 @@ function StaffPaymentsPage() {
                   setShowPaymentForm(true);
                 }
               }}
-              className="rounded-xl bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-800"
+              className="btn-primary"
             >
               {showPaymentForm ? 'Cerrar formulario' : 'Registrar pago'}
             </button>
@@ -1028,8 +1026,8 @@ function StaffPaymentsPage() {
         </div>
       </div>
 
-      {message ? <p className="rounded-xl bg-primary-50 p-3 text-sm text-primary-800">{message}</p> : null}
-      {error ? <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+      {message ? <p className="app-alert app-alert-info">{message}</p> : null}
+      {error ? <p className="app-alert app-alert-danger">{error}</p> : null}
 
       {canManagePayments && canViewEnrollments && showPaymentForm ? (
         <form onSubmit={submitPayment} className="panel-soft space-y-4">
@@ -1295,7 +1293,7 @@ function StaffPaymentsPage() {
               type="button"
               onClick={previewPaymentReceipt}
               disabled={loadingPendingSummary || loadingEnrollments}
-              className="rounded-xl border border-primary-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-secondary"
             >
               Vista previa comprobante
             </button>
@@ -1306,7 +1304,7 @@ function StaffPaymentsPage() {
                 submitModeRef.current = 'save';
               }}
               disabled={savingPayment || loadingPendingSummary || loadingEnrollments}
-              className="rounded-xl bg-accent-600 px-4 py-2 text-sm font-semibold text-white hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-primary"
             >
               {savingPayment ? 'Registrando...' : 'Guardar pago'}
             </button>
@@ -1317,7 +1315,7 @@ function StaffPaymentsPage() {
                 submitModeRef.current = 'print';
               }}
               disabled={savingPayment || loadingPendingSummary || loadingEnrollments}
-              className="rounded-xl border border-accent-300 px-4 py-2 text-sm font-semibold text-accent-800 hover:bg-accent-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-secondary"
             >
               {savingPayment ? 'Procesando...' : 'Guardar e imprimir'}
             </button>
@@ -1328,7 +1326,7 @@ function StaffPaymentsPage() {
                 setShowPaymentForm(false);
                 resetPaymentForm();
               }}
-              className="rounded-xl border border-primary-300 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-primary-50"
+              className="btn-secondary"
             >
               Cancelar
             </button>
@@ -1348,7 +1346,7 @@ function StaffPaymentsPage() {
                   loadingPayments ||
                   (statusFilter === 'ALL' && !studentFilter && !campusFilter && !dateFromFilter && !dateToFilter)
                 }
-                className="rounded-lg border border-primary-200 px-3 py-2 text-sm text-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-secondary"
               >
                 Limpiar filtros
               </button>
@@ -1356,9 +1354,9 @@ function StaffPaymentsPage() {
                 type="button"
                 onClick={exportPaymentsCsv}
                 disabled={loadingPayments || exportingPayments}
-                className="rounded-lg border border-primary-300 bg-white px-3 py-2 text-sm font-semibold text-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-secondary"
               >
-                {exportingPayments ? 'Exportando...' : 'Exportar Excel'}
+                {exportingPayments ? 'Exportando...' : 'Exportar CSV'}
               </button>
             </div>
           </div>
@@ -1495,7 +1493,7 @@ function StaffPaymentsPage() {
                 type="button"
                 onClick={() => setRejectingPaymentId(null)}
                 disabled={savingRejection}
-                className="rounded-xl border border-primary-200 bg-white px-4 py-2 text-sm font-semibold text-primary-700 transition hover:bg-primary-50"
+                className="btn-secondary"
               >
                 Cancelar
               </button>
@@ -1503,7 +1501,7 @@ function StaffPaymentsPage() {
                 type="button"
                 onClick={confirmRejection}
                 disabled={savingRejection || !rejectionNotes.trim()}
-                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white transition hover:bg-red-700 disabled:opacity-50"
+                className="btn-danger"
               >
                 {savingRejection ? 'Rechazando...' : 'Confirmar rechazo'}
               </button>

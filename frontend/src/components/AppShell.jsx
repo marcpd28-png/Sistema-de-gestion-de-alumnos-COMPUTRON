@@ -257,6 +257,77 @@ export default function AppShell() {
   const dashboardMenuActive = isDashboardRoute || isDashboardExpanded;
   const isAdminRoute = location.pathname === '/users';
   const adminMenuActive = isAdminRoute || isAdminExpanded;
+  const userDisplayName = [user?.first_name, user?.last_name].filter(Boolean).join(' ') || 'Usuario';
+  const roleLabel = roles.length ? roles.join(' · ') : 'Perfil';
+  const currentModule = useMemo(() => {
+    if (isDashboardRoute) {
+      const activeItem = visibleDashboardItems.find((item) => item.key === activeDashboardSection);
+      return {
+        title: activeItem?.label || 'Dashboard',
+        section: 'Panel principal',
+      };
+    }
+
+    if (isManagementRoute) {
+      const activeItem = visibleManagementItems.find((item) => item.key === activeManagementSection);
+      const activeGroup = visibleManagementGroups.find((group) =>
+        group.items.some((item) => item.key === activeManagementSection),
+      );
+      return {
+        title: activeItem?.label || 'Operaciones',
+        section: activeGroup?.label || 'Administración',
+      };
+    }
+
+    if (isAulaVirtualRoute) {
+      const activeItem = visibleAulaVirtualItems.find((item) => {
+        const pathWithoutSearch = item.to.split('?')[0];
+        if (item.to === '/courses') return isCoursesOverviewRoute;
+        if (item.to === '/courses?tab=attendance') {
+          return location.pathname === '/courses' && isAttendanceTabActive;
+        }
+        return location.pathname === pathWithoutSearch;
+      });
+      return {
+        title: activeItem?.label || 'Aula Virtual',
+        section: 'Académico',
+      };
+    }
+
+    if (isAdminRoute) {
+      return {
+        title: 'Usuarios',
+        section: 'Administración',
+      };
+    }
+
+    if (isCertificatesRoute) {
+      return {
+        title: 'Certificados',
+        section: 'Documentos',
+      };
+    }
+
+    return {
+      title: 'Sistema de Gestión',
+      section: 'Computron',
+    };
+  }, [
+    activeDashboardSection,
+    activeManagementSection,
+    isAdminRoute,
+    isAulaVirtualRoute,
+    isCertificatesRoute,
+    isCoursesOverviewRoute,
+    isDashboardRoute,
+    isAttendanceTabActive,
+    isManagementRoute,
+    location.pathname,
+    visibleAulaVirtualItems,
+    visibleDashboardItems,
+    visibleManagementGroups,
+    visibleManagementItems,
+  ]);
 
   const renderSidebarLabel = (label, Icon, active, { trailing = null, compact = false } = {}) => (
     <span className="flex items-center justify-between gap-2">
@@ -399,13 +470,13 @@ export default function AppShell() {
   return (
     <div className="min-h-screen lg:grid lg:grid-cols-[260px_minmax(0,1fr)]">
       <aside
-        className={`fixed left-0 top-0 z-20 flex h-full w-[260px] transform flex-col overflow-y-auto border-r border-primary-200 bg-primary-900 text-primary-50 transition lg:static lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'
+        className={`sidebar-scroll fixed left-0 top-0 z-20 flex h-full w-[260px] transform flex-col overflow-y-auto border-r border-primary-200 bg-primary-900 text-primary-50 transition lg:static lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'
           }`}
       >
         <div className="p-4 pb-2">
           <h1 className="text-xl font-semibold">Computron</h1>
-          <p className="mt-2 truncate text-sm text-slate-300">{user?.first_name} {user?.last_name}</p>
-          <p className="truncate text-xs text-slate-400">{roles.join(' · ')}</p>
+          <p className="mt-2 truncate text-sm text-slate-300">{userDisplayName}</p>
+          <p className="truncate text-xs text-slate-400">{roleLabel}</p>
         </div>
 
         <nav className="flex-1 space-y-1 p-3 pb-5">
@@ -656,25 +727,34 @@ export default function AppShell() {
       </aside>
 
       <div className="min-h-screen min-w-0 lg:ml-0">
-        <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900">
-          <div className="flex items-center gap-3">
+        <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-3 border-b border-slate-200 bg-white/95 px-3 py-3 dark:border-white/10 dark:bg-slate-900 sm:px-4">
+          <div className="flex min-w-0 items-center gap-3">
             <button
               type="button"
               onClick={() => setOpen((value) => !value)}
-              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium lg:hidden dark:border-white/20 dark:text-white"
+              className="btn-secondary shrink-0 lg:hidden dark:border-white/20 dark:text-white"
             >
               <span className="flex items-center gap-2">
                 <Menu className="h-4 w-4" />
                 <span>Menú</span>
               </span>
             </button>
-            <h2 className="text-lg font-semibold text-slate-800 dark:text-white">Sistema de Gestión</h2>
+            <div className="min-w-0">
+              <p className="truncate text-xs font-semibold text-primary-700">{currentModule.section}</p>
+              <h2 className="truncate text-base font-semibold text-slate-900 dark:text-white sm:text-lg">
+                {currentModule.title}
+              </h2>
+            </div>
           </div>
 
-          <div />
+          <div className="hidden min-w-0 items-center gap-2 rounded-full border border-slate-200 bg-slate-50 px-3 py-1.5 text-xs text-slate-600 md:flex">
+            <span className="max-w-[180px] truncate font-semibold text-slate-800">{userDisplayName}</span>
+            <span className="text-slate-400">/</span>
+            <span className="max-w-[160px] truncate">{roleLabel}</span>
+          </div>
         </header>
 
-        <main className={isCertificatesRoute ? 'w-full min-w-0 p-2 md:p-3' : 'mx-auto w-full max-w-7xl min-w-0 p-3 sm:p-4 md:p-6'}>
+        <main className={isCertificatesRoute ? 'w-full min-w-0 p-2 md:p-3' : 'mx-auto w-full max-w-7xl min-w-0 p-3 sm:p-4 md:p-5'}>
           <Outlet key={location.pathname} />
         </main>
       </div>

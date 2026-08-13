@@ -2602,28 +2602,31 @@ export default function ManagementPage() {
     );
   }
 
+  const managementSummaryPills = [
+    { label: 'Alumnos', value: studentTotal || students.length },
+    { label: 'Docentes', value: teacherTotal || teachers.length },
+    { label: 'Cursos', value: courseTotal || courses.length },
+    { label: 'Sedes', value: campuses.length },
+    { label: 'Periodos', value: periods.length },
+  ].filter((item) => Number(item.value || 0) > 0);
+
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-semibold text-primary-900">Operaciones administrativas</h1>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
-            Alumnos {studentTotal || students.length}
-          </span>
-          <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-800">
-            Docentes {teacherTotal || teachers.length}
-          </span>
-          <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
-            Cursos {courseTotal || courses.length}
-          </span>
-          <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-800">
-            Sedes {campuses.length}
-          </span>
-          <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
-            Periodos {periods.length}
-          </span>
+    <section className="app-page">
+      <div className="hidden sm:block">
+        <div className="app-section-bar">
+          <div>
+            <h1 className="app-section-title">Operaciones administrativas</h1>
+            <p className="text-sm text-slate-600">Accesos rápidos para gestión académica y financiera.</p>
+          </div>
+          {managementSummaryPills.length ? (
+            <div className="app-toolbar">
+              {managementSummaryPills.map((item) => (
+                <span key={item.label} className="app-pill">
+                  {item.label} {item.value}
+                </span>
+              ))}
+            </div>
+          ) : null}
         </div>
       </div>
 
@@ -2674,7 +2677,7 @@ export default function ManagementPage() {
                     setShowStudentForm(true);
                   }
                 }}
-                className="rounded-xl bg-primary-700 px-4 py-2 text-sm font-semibold text-white hover:bg-primary-800"
+                className="btn-primary"
               >
                 {showStudentForm ? 'Cerrar formulario' : editingStudentId ? 'Editar alumno' : 'Crear alumno'}
               </button>

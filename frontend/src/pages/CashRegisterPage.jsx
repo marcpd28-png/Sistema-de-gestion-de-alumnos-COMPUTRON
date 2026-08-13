@@ -856,12 +856,13 @@ export default function CashRegisterPage() {
   }
 
   return (
-    <section className="space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
+    <section className="app-page">
+      <div className="app-page-header">
         <div>
-          <h1 className="text-2xl font-semibold text-primary-900">Caja</h1>
+          <h1 className="app-title">Caja</h1>
+          <p className="app-subtitle">Registra servicios, pagos mixtos, vuelto y comprobantes desde una operación única.</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
+        <div className="app-toolbar">
           <span
             className={`inline-flex items-center gap-2 rounded-full px-3 py-1 text-xs font-semibold ${
               currentSession ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
@@ -879,7 +880,7 @@ export default function CashRegisterPage() {
             {sunatConfig?.configured ? 'SUNAT listo' : 'SUNAT pendiente'}
           </span>
           <select
-            className="app-input min-w-[140px]"
+            className="app-input app-input-compact"
             value={receiptFormat}
             onChange={(event) => setReceiptFormat(event.target.value)}
             aria-label="Diseño de comprobante"
@@ -891,7 +892,7 @@ export default function CashRegisterPage() {
             <button
               type="button"
               onClick={() => setShowServiceEditor((current) => !current)}
-              className="inline-flex items-center gap-2 rounded-xl border border-primary-200 bg-white px-3 py-2 text-sm font-semibold text-primary-800 transition hover:bg-primary-50"
+              className="btn-secondary"
             >
               <Settings2 className="h-4 w-4" />
               Servicios
@@ -900,8 +901,8 @@ export default function CashRegisterPage() {
         </div>
       </div>
 
-      {message ? <p className="rounded-xl bg-primary-50 p-3 text-sm text-primary-800">{message}</p> : null}
-      {error ? <p className="rounded-xl bg-red-50 p-3 text-sm text-red-700">{error}</p> : null}
+      {message ? <p className="app-alert app-alert-info">{message}</p> : null}
+      {error ? <p className="app-alert app-alert-danger">{error}</p> : null}
 
       <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
         <article className="panel-soft space-y-4">
@@ -913,7 +914,7 @@ export default function CashRegisterPage() {
               type="button"
               onClick={addCustomItem}
               disabled={!canManageCash || !currentSession}
-              className="inline-flex items-center gap-2 rounded-xl border border-primary-300 bg-white px-3 py-2 text-sm font-semibold text-primary-800 transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-secondary"
             >
               <Plus className="h-4 w-4" />
               Ítem libre
@@ -927,9 +928,9 @@ export default function CashRegisterPage() {
                 key={service.id}
                 onClick={() => addServiceToCart(service)}
                 disabled={!canManageCash || !currentSession}
-                className="flex min-h-[78px] flex-col justify-between rounded-xl border border-primary-100 bg-white p-3 text-left shadow-sm transition hover:border-primary-300 hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="service-tile"
               >
-                <span className="line-clamp-2 text-xs font-bold uppercase text-primary-900">{service.name}</span>
+                <span className="line-clamp-2 text-xs font-bold text-primary-900">{service.name}</span>
                 <span className="mt-2 text-base font-semibold text-emerald-700">{formatCurrency(service.default_price)}</span>
               </button>
             ))}
@@ -1184,7 +1185,7 @@ export default function CashRegisterPage() {
                 <button
                   type="button"
                   onClick={addPaymentLine}
-                  className="inline-flex items-center gap-2 rounded-xl border border-primary-300 bg-white px-3 py-2 text-sm font-semibold text-primary-800 transition hover:bg-primary-50"
+                  className="btn-secondary"
                 >
                   <Plus className="h-4 w-4" />
                   Agregar método
@@ -1242,25 +1243,25 @@ export default function CashRegisterPage() {
             ) : null}
 
             <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <article className="rounded-xl border border-primary-200 bg-white p-3">
-                <p className="text-xs font-semibold uppercase text-primary-700">Total</p>
-                <p className="mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.totalAmount)}</p>
+              <article className="metric-tile">
+                <p className="metric-label">Total</p>
+                <p className="ui-numeric mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.totalAmount)}</p>
               </article>
-              <article className="rounded-xl border border-primary-200 bg-white p-3">
-                <p className="text-xs font-semibold uppercase text-primary-700">Cobrado</p>
-                <p className="mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.amountReceived)}</p>
+              <article className="metric-tile">
+                <p className="metric-label">Cobrado</p>
+                <p className="ui-numeric mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.amountReceived)}</p>
               </article>
-              <article className="rounded-xl border border-primary-200 bg-white p-3">
-                <p className="text-xs font-semibold uppercase text-primary-700">Efectivo recibido</p>
-                <p className="mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.cashReceived)}</p>
+              <article className="metric-tile">
+                <p className="metric-label">Efectivo recibido</p>
+                <p className="ui-numeric mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.cashReceived)}</p>
               </article>
-              <article className="rounded-xl border border-primary-200 bg-white p-3">
-                <p className="text-xs font-semibold uppercase text-primary-700">Efectivo caja</p>
-                <p className="mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.cashNetAmount)}</p>
+              <article className="metric-tile">
+                <p className="metric-label">Efectivo caja</p>
+                <p className="ui-numeric mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.cashNetAmount)}</p>
               </article>
-              <article className="rounded-xl border border-primary-200 bg-white p-3">
-                <p className="text-xs font-semibold uppercase text-primary-700">Vuelto</p>
-                <p className="mt-1 text-2xl font-semibold text-emerald-700">{formatCurrency(cartTotals.changeAmount)}</p>
+              <article className="metric-tile">
+                <p className="metric-label">Vuelto</p>
+                <p className="ui-numeric mt-1 text-2xl font-semibold text-emerald-700">{formatCurrency(cartTotals.changeAmount)}</p>
               </article>
             </div>
 
@@ -1292,7 +1293,7 @@ export default function CashRegisterPage() {
                   submitModeRef.current = 'save';
                 }}
                 disabled={savingSale || !canManageCash || !currentSession}
-                className="inline-flex items-center gap-2 rounded-xl bg-accent-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-accent-700 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-primary"
               >
                 <Save className="h-4 w-4" />
                 {savingSale ? 'Guardando...' : 'Guardar y emitir boleta'}
@@ -1303,7 +1304,7 @@ export default function CashRegisterPage() {
                   submitModeRef.current = 'print';
                 }}
                 disabled={savingSale || !canManageCash || !currentSession}
-                className="inline-flex items-center gap-2 rounded-xl border border-accent-300 bg-white px-4 py-2 text-sm font-semibold text-accent-800 transition hover:bg-accent-50 disabled:cursor-not-allowed disabled:opacity-60"
+                className="btn-secondary"
               >
                 <Printer className="h-4 w-4" />
                 {savingSale ? 'Procesando...' : 'Guardar, emitir e imprimir'}
@@ -1311,7 +1312,7 @@ export default function CashRegisterPage() {
               <button
                 type="button"
                 onClick={resetSale}
-                className="inline-flex items-center gap-2 rounded-xl border border-primary-200 bg-white px-4 py-2 text-sm font-semibold text-primary-800 transition hover:bg-primary-50"
+                className="btn-secondary"
               >
                 <RotateCcw className="h-4 w-4" />
                 Limpiar
@@ -1321,7 +1322,7 @@ export default function CashRegisterPage() {
         </article>
 
         <aside className="space-y-4">
-          <article className="card space-y-3">
+          <article className="card space-y-3 xl:sticky xl:top-24">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-primary-900">Sesión</h2>
               <CircleDollarSign className="h-5 w-5 text-primary-700" />
@@ -1330,21 +1331,21 @@ export default function CashRegisterPage() {
             {currentSession ? (
               <>
                 <div className="grid grid-cols-2 gap-2 text-sm">
-                  <div className="rounded-xl bg-primary-50 p-3">
-                    <p className="text-xs font-semibold uppercase text-primary-600">Apertura</p>
-                    <p className="font-semibold text-primary-900">{formatCurrency(currentSession.opening_amount)}</p>
+                  <div className="metric-tile">
+                    <p className="metric-label">Apertura</p>
+                    <p className="metric-value">{formatCurrency(currentSession.opening_amount)}</p>
                   </div>
-                  <div className="rounded-xl bg-primary-50 p-3">
-                    <p className="text-xs font-semibold uppercase text-primary-600">Efectivo esperado</p>
-                    <p className="font-semibold text-primary-900">{formatCurrency(expectedCashAmount)}</p>
+                  <div className="metric-tile">
+                    <p className="metric-label">Efectivo esperado</p>
+                    <p className="metric-value">{formatCurrency(expectedCashAmount)}</p>
                   </div>
-                  <div className="rounded-xl bg-primary-50 p-3">
-                    <p className="text-xs font-semibold uppercase text-primary-600">Efectivo cobrado</p>
-                    <p className="font-semibold text-primary-900">{formatCurrency(sessionSummary.cash_sales)}</p>
+                  <div className="metric-tile">
+                    <p className="metric-label">Efectivo cobrado</p>
+                    <p className="metric-value">{formatCurrency(sessionSummary.cash_sales)}</p>
                   </div>
-                  <div className="rounded-xl bg-primary-50 p-3">
-                    <p className="text-xs font-semibold uppercase text-primary-600">Digital</p>
-                    <p className="font-semibold text-primary-900">{formatCurrency(sessionSummary.digital_sales)}</p>
+                  <div className="metric-tile">
+                    <p className="metric-label">Digital</p>
+                    <p className="metric-value">{formatCurrency(sessionSummary.digital_sales)}</p>
                   </div>
                 </div>
                 <p className="text-xs text-primary-700">
@@ -1371,7 +1372,7 @@ export default function CashRegisterPage() {
                     <button
                       type="submit"
                       disabled={savingSession}
-                      className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-primary-800 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-900 disabled:cursor-not-allowed disabled:opacity-60"
+                      className="btn-primary w-full"
                     >
                       <Lock className="h-4 w-4" />
                       {savingSession ? 'Cerrando...' : 'Cerrar caja'}
@@ -1405,7 +1406,7 @@ export default function CashRegisterPage() {
                 <button
                   type="submit"
                   disabled={savingSession}
-                  className="inline-flex w-full items-center justify-center gap-2 rounded-xl bg-emerald-600 px-4 py-2 text-sm font-semibold text-white transition hover:bg-emerald-700 disabled:cursor-not-allowed disabled:opacity-60"
+                  className="btn-success w-full"
                 >
                   <Unlock className="h-4 w-4" />
                   {savingSession ? 'Abriendo...' : 'Abrir caja'}
@@ -1473,7 +1474,7 @@ export default function CashRegisterPage() {
                 setEditingServiceId(null);
                 setServiceForm(serviceDefaults);
               }}
-              className="inline-flex items-center gap-2 rounded-xl border border-primary-200 bg-white px-3 py-2 text-sm font-semibold text-primary-800 hover:bg-primary-50"
+              className="btn-secondary"
             >
               <Plus className="h-4 w-4" />
               Nuevo
@@ -1524,7 +1525,7 @@ export default function CashRegisterPage() {
             <button
               type="submit"
               disabled={savingService}
-              className="inline-flex items-center justify-center gap-2 rounded-xl bg-primary-700 px-4 py-2 text-sm font-semibold text-white transition hover:bg-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-primary"
             >
               <Save className="h-4 w-4" />
               {savingService ? 'Guardando...' : editingServiceId ? 'Actualizar' : 'Crear'}
@@ -1556,7 +1557,7 @@ export default function CashRegisterPage() {
                   <button
                     type="button"
                     onClick={() => editService(service)}
-                    className="rounded-lg border border-primary-200 px-3 py-1.5 text-xs font-semibold text-primary-800 hover:bg-primary-50"
+                    className="btn-secondary min-h-0 px-3 py-1.5 text-xs"
                   >
                     Editar
                   </button>
@@ -1573,7 +1574,7 @@ export default function CashRegisterPage() {
           <button
             type="button"
             onClick={clearFilters}
-            className="rounded-lg border border-primary-200 bg-white px-3 py-2 text-sm font-semibold text-primary-800 hover:bg-primary-50"
+            className="btn-secondary"
           >
             Limpiar filtros
           </button>
@@ -1815,7 +1816,7 @@ export default function CashRegisterPage() {
               type="button"
               onClick={() => setVisibleCount((current) => current + CASH_LOAD_STEP)}
               disabled={loading}
-              className="rounded-lg border border-primary-300 px-3 py-2 text-sm font-semibold text-primary-800 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-secondary"
             >
               {loading ? 'Cargando...' : `Ver ${CASH_LOAD_STEP} movimientos más`}
             </button>
@@ -1825,7 +1826,7 @@ export default function CashRegisterPage() {
               type="button"
               onClick={() => setVisibleCount(CASH_INITIAL_LIMIT)}
               disabled={loading}
-              className="rounded-lg border border-primary-200 px-3 py-2 text-sm text-primary-700 disabled:cursor-not-allowed disabled:opacity-60"
+              className="btn-secondary"
             >
               Ver solo los últimos {CASH_INITIAL_LIMIT}
             </button>
@@ -1857,7 +1858,7 @@ export default function CashRegisterPage() {
                 type="button"
                 onClick={() => setVoidingTransactionId(null)}
                 disabled={savingVoid}
-                className="rounded-xl border border-primary-200 px-4 py-2 text-sm font-semibold text-primary-800 hover:bg-primary-50"
+                className="btn-secondary"
               >
                 Cancelar
               </button>
@@ -1865,7 +1866,7 @@ export default function CashRegisterPage() {
                 type="button"
                 onClick={confirmVoidTransaction}
                 disabled={savingVoid || voidNotes.trim().length < 3}
-                className="rounded-xl bg-red-600 px-4 py-2 text-sm font-bold text-white hover:bg-red-700 disabled:opacity-50"
+                className="btn-danger"
               >
                 {savingVoid ? 'Anulando...' : 'Confirmar'}
               </button>

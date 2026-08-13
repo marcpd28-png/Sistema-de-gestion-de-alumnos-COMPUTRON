@@ -22,13 +22,15 @@ export default function LoginPage() {
   };
 
   return (
-    <div className="flex min-h-screen items-center justify-center px-4 py-10">
-      <div className="w-full max-w-md rounded-3xl border border-primary-200 bg-white p-7 shadow-soft">
-        <p className="text-xs uppercase tracking-[0.2em] text-primary-500">Instituto Computron</p>
-        <h1 className="mt-2 text-2xl font-semibold text-primary-900">Ingreso al sistema</h1>
-        <p className="mt-1 text-sm text-primary-700">Accede con tu usuario institucional.</p>
+    <div className="flex min-h-screen items-center justify-center bg-slate-50 px-4 py-10">
+      <div className="w-full max-w-md rounded-lg border border-primary-100 bg-white p-6">
+        <div className="mb-6 border-b border-slate-100 pb-4">
+          <p className="text-sm font-semibold text-primary-700">Instituto Computron</p>
+          <h1 className="mt-1 text-2xl font-semibold text-primary-900">Ingreso al sistema</h1>
+          <p className="mt-1 text-sm text-slate-600">Accede con tu usuario institucional.</p>
+        </div>
 
-        <form className="mt-6 space-y-4" onSubmit={handleSubmit}>
+        <form className="space-y-4" onSubmit={handleSubmit}>
           <div>
             <label className="mb-1 block text-sm font-medium">Correo</label>
             <input
@@ -53,12 +55,12 @@ export default function LoginPage() {
             />
           </div>
 
-          {error ? <p className="rounded-lg bg-red-50 p-2 text-sm text-red-700">{error}</p> : null}
+          {error ? <p className="app-alert app-alert-danger">{error}</p> : null}
 
           <button
             type="submit"
             disabled={loading}
-            className="w-full rounded-xl bg-primary-600 px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-primary-700 disabled:cursor-not-allowed disabled:opacity-70"
+            className="btn-primary w-full"
           >
             {loading ? 'Validando...' : 'Ingresar'}
           </button>
