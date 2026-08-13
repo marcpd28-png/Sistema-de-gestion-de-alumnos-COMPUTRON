@@ -12,6 +12,7 @@ const { createTrustedOriginPolicy } = require('./utils/trustedOrigin');
 
 const app = express();
 app.set('etag', false);
+app.set('trust proxy', env.trustProxy);
 const trustedOriginPolicy = createTrustedOriginPolicy(env);
 const uploadPublicDir = path.resolve(__dirname, '..', 'uploads');
 const defaultJsonParser = express.json({ limit: '1mb' });

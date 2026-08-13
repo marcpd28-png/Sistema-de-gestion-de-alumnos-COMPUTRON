@@ -40,15 +40,29 @@ const parseBooleanEnv = (rawValue, fallback = false) => {
   return ['1', 'true', 'si', 'yes', 'on'].includes(normalized);
 };
 
+const parseTrustProxyEnv = (rawValue, fallback = false) => {
+  if (rawValue === undefined || rawValue === null || rawValue === '') return fallback;
+
+  const normalized = String(rawValue).trim().toLowerCase();
+  if (['0', 'false', 'no', 'off'].includes(normalized)) return false;
+  if (['1', 'true', 'si', 'yes', 'on'].includes(normalized)) return true;
+
+  const numericValue = Number(normalized);
+  if (Number.isInteger(numericValue) && numericValue >= 0) return numericValue;
+
+  return String(rawValue).trim();
+};
+
 const normalizeBaseUrl = (rawValue) => String(rawValue || '').trim().replace(/\/+$/, '');
 
+const nodeEnv = process.env.NODE_ENV || 'development';
 const rawFrontendUrls = process.env.FRONTEND_URLS || process.env.FRONTEND_URL || 'http://localhost:8100';
 const rawFrontendUrlPatterns = process.env.FRONTEND_URL_PATTERNS || process.env.FRONTEND_ORIGIN_PATTERNS || '';
 
 const frontendUrls = parseCsvEnv(rawFrontendUrls);
 const frontendUrlPatterns = parseCsvEnv(rawFrontendUrlPatterns);
 
-if ((process.env.NODE_ENV || 'development') !== 'production') {
+if (nodeEnv !== 'production') {
   frontendUrls.push(
     'http://localhost:8100',
     'http://localhost:8101',
@@ -58,8 +72,9 @@ if ((process.env.NODE_ENV || 'development') !== 'production') {
 }
 
 const env = {
-  nodeEnv: process.env.NODE_ENV || 'development',
+  nodeEnv,
   port: parsePositiveNumber(process.env.PORT, 4010, 'PORT'),
+  trustProxy: parseTrustProxyEnv(process.env.TRUST_PROXY, nodeEnv === 'production' ? 'loopback' : false),
   frontendUrl: frontendUrls[0] || 'http://localhost:8100',
   frontendUrls: Array.from(new Set(frontendUrls)),
   frontendUrlPatterns: Array.from(new Set(frontendUrlPatterns)),
