@@ -133,6 +133,15 @@
         font-weight: 700;
       }
 
+      .payment-detail {
+        margin-top: 6px;
+        border-top: 1px dotted #888;
+        padding-top: 5px;
+        font-size: 10px;
+        line-height: 1.35;
+        word-break: break-word;
+      }
+
       .words {
         margin-top: 8px;
         border-top: 1px dotted #888;
@@ -194,6 +203,8 @@
             <div class="sum-row"><span>OPERACION EXONERADA</span><span>{{OP_EXONERADA}}</span></div>
             <div class="sum-row"><span>I.G.V</span><span>{{IGV}}</span></div>
             <div class="sum-row total"><span>IMPORTE TOTAL (PEN)</span><span>{{TOTAL_AMOUNT_PLAIN}}</span></div>
+            {{CHANGE_ROWS_F1}}
+            {{PAYMENT_SUMMARY_ROW_F1}}
           </div>
         </div>
 

@@ -8,6 +8,21 @@ const {
   decryptReceiptToken,
 } = require('../services/receiptTokenCrypto.service');
 
+const CASH_SERVICE_SEED_ITEMS = [
+  ['CERTIFICADO DE ESTUDIOS OFICIAL POR CICLO', 'Servicio administrativo', 52.0, 10],
+  ['CERTIFICADO POR CURSO', 'Servicio administrativo', 40.0, 20],
+  ['CERTIFICACION PROGRESIVA CARRERA', 'Servicio administrativo', 22.0, 30],
+  ['CERTIFICADOS DE ESTUDIOS CETPRO', 'Servicio administrativo', 82.0, 40],
+  ['CONSTANCIA DE ESTUDIOS', 'Servicio administrativo', 27.0, 50],
+  ['CONSTANCIA DE MATRICULA', 'Servicio administrativo', 27.0, 60],
+  ['CONSTANCIA DE NO ADEUDO', 'Servicio administrativo', 17.0, 70],
+  ['CAMBIO DE TURNO', 'Servicio administrativo', 12.0, 80],
+  ['CAMBIO DE CARRERA', 'Servicio administrativo', 12.0, 90],
+  ['CAMBIO DE LOCAL', 'Servicio administrativo', 12.0, 100],
+  ['CARNET DE MEDIO PASAJE', 'Servicio administrativo', 20.0, 110],
+  ['CONVALIDACION', 'Servicio administrativo', 22.0, 120],
+];
+
 const ensurePassingGradeColumn = async () => {
   const existsResult = await query(`SELECT to_regclass('public.courses') AS table_name`);
   const tableExists = Boolean(existsResult.rows[0]?.table_name);
@@ -990,6 +1005,225 @@ const ensureReceiptSnapshotsTable = async () => {
   );
 };
 
+const ensureCashRegisterRolePermissions = async () => {
+  await query(
+    `INSERT INTO role_permissions (role_id, permission_id)
+     SELECT r.id, p.id
+     FROM roles r
+     JOIN permissions p ON p.code = ANY($2::text[])
+     WHERE r.name = ANY($1::text[])
+     ON CONFLICT DO NOTHING`,
+    [
+      ['DIRECTOR', 'SECRETARIADO'],
+      ['cash_register.view', 'cash_register.manage'],
+    ],
+  );
+};
+
+const ensureCashRegisterTables = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS cash_service_items (
+      id BIGSERIAL PRIMARY KEY,
+      name VARCHAR(140) UNIQUE NOT NULL,
+      description VARCHAR(240),
+      default_price NUMERIC(10,2) NOT NULL CHECK (default_price >= 0),
+      is_active BOOLEAN NOT NULL DEFAULT TRUE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  for (const [name, description, defaultPrice, sortOrder] of CASH_SERVICE_SEED_ITEMS) {
+    await query(
+      `INSERT INTO cash_service_items (name, description, default_price, sort_order)
+       VALUES ($1, $2, $3, $4)
+       ON CONFLICT (name) DO NOTHING`,
+      [name, description, defaultPrice, sortOrder],
+    );
+  }
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS cash_register_sessions (
+      id BIGSERIAL PRIMARY KEY,
+      campus_id BIGINT NOT NULL REFERENCES campuses(id) ON DELETE RESTRICT,
+      opening_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (opening_amount >= 0),
+      opened_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      closing_amount NUMERIC(10,2) CHECK (closing_amount IS NULL OR closing_amount >= 0),
+      expected_cash_amount NUMERIC(10,2),
+      difference_amount NUMERIC(10,2),
+      closed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      closed_at TIMESTAMPTZ,
+      status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED')),
+      notes VARCHAR(400),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS cash_transactions (
+      id BIGSERIAL PRIMARY KEY,
+      session_id BIGINT NOT NULL REFERENCES cash_register_sessions(id) ON DELETE RESTRICT,
+      campus_id BIGINT NOT NULL REFERENCES campuses(id) ON DELETE RESTRICT,
+      student_id BIGINT REFERENCES students(id) ON DELETE SET NULL,
+      customer_name VARCHAR(180) NOT NULL,
+      customer_document VARCHAR(20),
+      customer_address VARCHAR(240),
+      total_amount NUMERIC(10,2) NOT NULL CHECK (total_amount >= 0),
+      amount_received NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (amount_received >= 0),
+      change_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (change_amount >= 0),
+      method VARCHAR(30) NOT NULL CHECK (method IN ('YAPE', 'PLIN', 'TRANSFERENCIA', 'QR', 'TARJETA', 'CANJE', 'EFECTIVO', 'OTRO', 'MIXTO')),
+      reference_code VARCHAR(120),
+      status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED' CHECK (status IN ('COMPLETED', 'VOIDED')),
+      receipt_document_type VARCHAR(30) NOT NULL DEFAULT 'BOLETA'
+        CHECK (receipt_document_type IN ('BOLETA', 'FACTURA', 'RECIBO_INTERNO')),
+      billing_name VARCHAR(180),
+      billing_document VARCHAR(20),
+      billing_address VARCHAR(240),
+      receipt_token TEXT NOT NULL,
+      receipt_token_hash VARCHAR(64) NOT NULL UNIQUE,
+      notes VARCHAR(400),
+      processed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    DO $$
+    BEGIN
+      IF EXISTS (
+        SELECT 1
+        FROM pg_constraint
+        WHERE conname = 'cash_transactions_method_check'
+      ) THEN
+        ALTER TABLE cash_transactions
+        DROP CONSTRAINT cash_transactions_method_check;
+      END IF;
+
+      ALTER TABLE cash_transactions
+      ADD CONSTRAINT cash_transactions_method_check
+      CHECK (method IN ('YAPE', 'PLIN', 'TRANSFERENCIA', 'QR', 'TARJETA', 'CANJE', 'EFECTIVO', 'OTRO', 'MIXTO'));
+    EXCEPTION
+      WHEN duplicate_object THEN NULL;
+    END
+    $$;
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS cash_transaction_items (
+      id BIGSERIAL PRIMARY KEY,
+      transaction_id BIGINT NOT NULL REFERENCES cash_transactions(id) ON DELETE CASCADE,
+      service_item_id BIGINT REFERENCES cash_service_items(id) ON DELETE SET NULL,
+      description VARCHAR(180) NOT NULL,
+      quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+      unit_price NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
+      total_amount NUMERIC(10,2) NOT NULL CHECK (total_amount >= 0),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS cash_transaction_payments (
+      id BIGSERIAL PRIMARY KEY,
+      transaction_id BIGINT NOT NULL REFERENCES cash_transactions(id) ON DELETE CASCADE,
+      method VARCHAR(30) NOT NULL CHECK (method IN ('YAPE', 'PLIN', 'TRANSFERENCIA', 'QR', 'TARJETA', 'CANJE', 'EFECTIVO', 'OTRO')),
+      amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+      reference_code VARCHAR(120),
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+
+  await query(`
+    CREATE TABLE IF NOT EXISTS cash_transaction_audit (
+      id BIGSERIAL PRIMARY KEY,
+      transaction_id BIGINT NOT NULL REFERENCES cash_transactions(id) ON DELETE CASCADE,
+      old_status VARCHAR(20),
+      new_status VARCHAR(20) NOT NULL,
+      changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      changed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      notes VARCHAR(400)
+    )
+  `);
+
+  await query(`
+    CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_register_sessions_open_campus
+    ON cash_register_sessions(campus_id)
+    WHERE status = 'OPEN'
+  `);
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_cash_register_sessions_campus_opened
+     ON cash_register_sessions(campus_id, opened_at DESC)`,
+  );
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_cash_service_items_active_sort
+     ON cash_service_items(is_active, sort_order, name)`,
+  );
+  await query(`CREATE INDEX IF NOT EXISTS idx_cash_transactions_session_id ON cash_transactions(session_id)`);
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_cash_transactions_campus_created
+     ON cash_transactions(campus_id, created_at DESC)`,
+  );
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_cash_transactions_status_method
+     ON cash_transactions(status, method)`,
+  );
+  await query(
+    `CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_transactions_receipt_token_hash
+     ON cash_transactions(receipt_token_hash)`,
+  );
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_cash_transaction_items_transaction_id
+     ON cash_transaction_items(transaction_id)`,
+  );
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_cash_transaction_payments_transaction_id
+     ON cash_transaction_payments(transaction_id)`,
+  );
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_cash_transaction_audit_transaction_date
+     ON cash_transaction_audit(transaction_id, changed_at DESC)`,
+  );
+};
+
+const ensureElectronicDocumentSubmissionTable = async () => {
+  await query(`
+    CREATE TABLE IF NOT EXISTS electronic_document_submissions (
+      id BIGSERIAL PRIMARY KEY,
+      source_type VARCHAR(40) NOT NULL CHECK (source_type IN ('CASH_TRANSACTION', 'PAYMENT')),
+      source_id BIGINT NOT NULL,
+      receipt_document_type VARCHAR(30) NOT NULL CHECK (receipt_document_type IN ('BOLETA', 'FACTURA')),
+      sunat_document_type VARCHAR(2) NOT NULL CHECK (sunat_document_type IN ('01', '03')),
+      sunat_api_document_id VARCHAR(80),
+      sunat_series VARCHAR(8),
+      sunat_document_number VARCHAR(40),
+      sunat_status VARCHAR(40) NOT NULL DEFAULT 'PENDIENTE',
+      sunat_message TEXT,
+      sunat_error_code VARCHAR(80),
+      request_payload JSONB,
+      create_response JSONB,
+      send_response JSONB,
+      submitted_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+      submitted_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      UNIQUE (source_type, source_id)
+    )
+  `);
+
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_electronic_document_submissions_source
+     ON electronic_document_submissions(source_type, source_id)`,
+  );
+  await query(
+    `CREATE INDEX IF NOT EXISTS idx_electronic_document_submissions_status
+     ON electronic_document_submissions(sunat_status, created_at DESC)`,
+  );
+};
+
 const ensureEnrollmentTransferStatus = async () => {
   const existsResult = await query(`SELECT to_regclass('public.enrollments') AS table_name`);
   const tableExists = Boolean(existsResult.rows[0]?.table_name);
@@ -1251,9 +1485,12 @@ const runBootMigrations = async () => {
   await ensureCoursePracticesTables();
   await ensureAttendanceStatusConstraint();
   await ensurePermissionsModel();
+  await ensureCashRegisterRolePermissions();
   await ensureUsersPersonalPermissionsModel();
   await ensurePaymentsEvidenceColumns();
   await ensureReceiptSnapshotsTable();
+  await ensureCashRegisterTables();
+  await ensureElectronicDocumentSubmissionTable();
   await ensureEnrollmentTransferStatus();
   await ensureCertificateLibraryTable();
   await ensureStudentTransferRequestsTable();

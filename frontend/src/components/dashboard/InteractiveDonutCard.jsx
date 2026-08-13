@@ -31,7 +31,7 @@ export default function InteractiveDonutCard({
     <article className="card space-y-4">
       <div>
         <h2 className="text-lg font-semibold text-primary-900">{title}</h2>
-        <p className="text-sm text-primary-700">{subtitle}</p>
+        {subtitle ? <p className="text-sm text-primary-700">{subtitle}</p> : null}
       </div>
 
       {!items.length ? (

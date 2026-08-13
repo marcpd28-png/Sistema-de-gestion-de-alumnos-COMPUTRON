@@ -17,21 +17,7 @@ const routeLoaders = {
 };
 
 const preloadedRoutes = new Set();
-const CORE_ROUTE_PRELOAD_ORDER = [
-  '/',
-  '/management',
-  '/virtual-library',
-  '/payments',
-  '/certificate-library',
-  '/users',
-  '/calendar',
-  '/my-grades',
-  '/courses',
-  '/teachers',
-  '/students',
-  '/certificates',
-  '/login',
-];
+const DEFAULT_CORE_ROUTE_PRELOAD_ORDER = ['/'];
 
 let corePreloadInProgress = false;
 let corePreloadQueue = [];
@@ -91,13 +77,17 @@ export const preloadRoute = (path) => {
   });
 };
 
-export const preloadCoreRoutes = () => {
+export const preloadCoreRoutes = (routes = DEFAULT_CORE_ROUTE_PRELOAD_ORDER) => {
   if (typeof window === 'undefined') return () => {};
   if (!isPreloadConnectionSuitable()) return () => {};
   if (corePreloadInProgress) return () => {};
 
+  const preloadOrder = Array.from(
+    new Set((Array.isArray(routes) && routes.length ? routes : DEFAULT_CORE_ROUTE_PRELOAD_ORDER).map(normalizeRoute)),
+  ).filter((path) => routeLoaders[path]);
+
   corePreloadInProgress = true;
-  corePreloadQueue = CORE_ROUTE_PRELOAD_ORDER.filter((path) => !preloadedRoutes.has(path));
+  corePreloadQueue = preloadOrder.filter((path) => !preloadedRoutes.has(path));
   cancelScheduledStep = scheduleIdleTask(runNextCorePreloadStep, 2500);
 
   return () => {

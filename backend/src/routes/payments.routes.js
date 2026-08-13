@@ -22,6 +22,10 @@ const {
   encryptReceiptToken,
   decryptReceiptToken,
 } = require('../services/receiptTokenCrypto.service');
+const {
+  removeUploadedFileQuietly,
+  validateUploadedFileSignature,
+} = require('../utils/fileValidation');
 
 const router = express.Router();
 
@@ -52,6 +56,7 @@ const paymentEvidenceMimeTypes = new Set([
   'image/png',
   'image/webp',
 ]);
+const paymentEvidenceExtensions = new Set(['.pdf', '.jpg', '.jpeg', '.png', '.webp']);
 
 fs.mkdirSync(paymentEvidenceDir, { recursive: true });
 
@@ -81,6 +86,10 @@ const paymentEvidenceUpload = multer({
     const mimeType = String(file.mimetype || '').toLowerCase();
     if (!paymentEvidenceMimeTypes.has(mimeType)) {
       return callback(new ApiError(400, 'Formato de evidencia no permitido. Use PDF, JPG, PNG o WEBP.'));
+    }
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    if (!paymentEvidenceExtensions.has(extension)) {
+      return callback(new ApiError(400, 'Extensión de evidencia no permitida. Use PDF, JPG, PNG o WEBP.'));
     }
     return callback(null, true);
   },
@@ -221,6 +230,17 @@ const paymentReceiptSchema = z.object({
     .optional(),
 });
 
+const paymentEvidenceFileSchema = z.object({
+  body: z.object({}).optional(),
+  params: z.object({ id: z.coerce.number().int().positive() }),
+  query: z
+    .object({
+      campus_id: z.coerce.number().int().positive().optional(),
+      download: z.string().optional(),
+    })
+    .optional(),
+});
+
 const paymentReceiptVerificationSchema = z.object({
   body: z.object({}).optional(),
   params: z.object({
@@ -348,6 +368,53 @@ const buildPaymentEvidenceUrl = (req, fileName) => {
   const encodedFileName = encodeURIComponent(fileName);
   const relativeUrl = `/api/uploads/payments/${encodedFileName}`;
   return buildFrontendAwareAbsoluteUrl(req, relativeUrl);
+};
+
+const resolveStoredPaymentEvidencePath = (evidenceUrl) => {
+  const normalizedUrl = String(evidenceUrl || '').trim();
+  if (!normalizedUrl) return null;
+
+  try {
+    const parsed = new URL(normalizedUrl);
+    if (!parsed.pathname.startsWith('/api/uploads/payments/')) return null;
+    return path.resolve(paymentEvidenceDir, path.basename(decodeURIComponent(parsed.pathname)));
+  } catch (_error) {
+    if (!normalizedUrl.startsWith('/api/uploads/payments/')) return null;
+    return path.resolve(paymentEvidenceDir, path.basename(decodeURIComponent(normalizedUrl)));
+  }
+};
+
+const toSafeHeaderFilename = (fileName = 'evidencia') => {
+  const normalized = String(fileName || 'evidencia').trim() || 'evidencia';
+  return normalized.replace(/[^\w.\- ]+/g, '_').slice(0, 180) || 'evidencia';
+};
+
+const assertEvidencePathInsideDir = (filePath) => {
+  const resolvedFilePath = path.resolve(filePath || '');
+  const resolvedBaseDir = path.resolve(paymentEvidenceDir);
+  if (!resolvedFilePath.startsWith(`${resolvedBaseDir}${path.sep}`)) {
+    throw new ApiError(400, 'Ruta de evidencia invalida.');
+  }
+  return resolvedFilePath;
+};
+
+const sendProtectedEvidenceFile = (res, { filePath, fileName, download = false }) => {
+  const resolvedFilePath = assertEvidencePathInsideDir(filePath);
+  if (!fs.existsSync(resolvedFilePath)) {
+    throw new ApiError(404, 'Evidencia no encontrada en el servidor.');
+  }
+
+  const safeFileName = toSafeHeaderFilename(fileName);
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader(
+    'Content-Disposition',
+    `${download ? 'attachment' : 'inline'}; filename="${safeFileName}"`,
+  );
+
+  return res.sendFile(resolvedFilePath);
 };
 
 const generateReceiptToken = () => crypto.randomBytes(16).toString('hex');
@@ -521,7 +588,24 @@ const buildPaymentReceiptHtml = async ({ req, payment, detailRows, format }) => 
 
 const uploadPaymentEvidence = (req, res, next) => {
   paymentEvidenceUpload.single('file')(req, res, (error) => {
-    if (!error) return next();
+    if (!error) {
+      if (!req.file) return next();
+
+      try {
+        validateUploadedFileSignature({
+          filePath: req.file.path,
+          originalName: req.file.originalname,
+          mimetype: req.file.mimetype,
+          allowedExtensions: paymentEvidenceExtensions,
+          allowedMimeTypes: paymentEvidenceMimeTypes,
+          label: 'evidencia',
+        });
+        return next();
+      } catch (validationError) {
+        removeUploadedFileQuietly(req.file.path);
+        return next(validationError);
+      }
+    }
 
     if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
       return next(
@@ -663,6 +747,51 @@ router.post(
 );
 
 router.get(
+  '/:id/evidence',
+  authorizePermission('payments.view', 'payments.manage'),
+  validate(paymentEvidenceFileSchema),
+  asyncHandler(async (req, res) => {
+    const paymentId = req.validated.params.id;
+    const campusScopeId = parseCampusScopeId(req);
+
+    const evidenceResult = await query(
+      `SELECT
+         p.id,
+         p.evidence_name,
+         p.evidence_url,
+         p.no_evidence
+       FROM payments p
+       JOIN enrollments e ON e.id = p.enrollment_id
+       JOIN course_campus cc ON cc.id = e.course_campus_id
+       WHERE p.id = $1
+         AND ($2::bigint IS NULL OR cc.campus_id = $2)
+       LIMIT 1`,
+      [paymentId, campusScopeId],
+    );
+
+    if (!evidenceResult.rowCount) {
+      throw new ApiError(404, 'Pago no encontrado.');
+    }
+
+    const evidence = evidenceResult.rows[0];
+    if (evidence.no_evidence || !evidence.evidence_url) {
+      throw new ApiError(404, 'Este pago no tiene evidencia adjunta.');
+    }
+
+    const filePath = resolveStoredPaymentEvidencePath(evidence.evidence_url);
+    if (!filePath) {
+      throw new ApiError(404, 'La evidencia no esta disponible en el almacenamiento seguro.');
+    }
+
+    return sendProtectedEvidenceFile(res, {
+      filePath,
+      fileName: evidence.evidence_name || `evidencia_pago_${paymentId}`,
+      download: toDownloadFlag(req.validated.query?.download),
+    });
+  }),
+);
+
+router.get(
   '/',
   authorizePermission('payments.view'),
   validate(paymentListSchema),
@@ -717,7 +846,7 @@ router.get(
         p.payment_date,
         p.notes,
         p.evidence_name,
-        p.evidence_url,
+        (p.evidence_url IS NOT NULL AND p.evidence_url <> '') AS has_evidence,
         p.no_evidence,
         p.receipt_document_type,
         p.created_at,

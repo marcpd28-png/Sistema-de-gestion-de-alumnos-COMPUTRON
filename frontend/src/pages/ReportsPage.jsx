@@ -237,7 +237,7 @@ export default function ReportsPage() {
       }));
 
       await downloadCsv({
-        filename: `reporte_saldos_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        filename: `reporte_saldos_${new Date().toISOString().slice(0, 10)}.csv`,
         headers: [
           { key: 'student_id', label: 'Alumno ID' },
           { key: 'student_name', label: 'Alumno' },
@@ -278,7 +278,7 @@ export default function ReportsPage() {
       }));
 
       await downloadCsv({
-        filename: `reporte_morosidad_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        filename: `reporte_morosidad_${new Date().toISOString().slice(0, 10)}.csv`,
         headers: [
           { key: 'installment_id', label: 'Cuota ID' },
           { key: 'due_date', label: 'Vencimiento' },
@@ -320,7 +320,7 @@ export default function ReportsPage() {
       }));
 
       await downloadCsv({
-        filename: `reporte_pagos_sede_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        filename: `reporte_pagos_sede_${new Date().toISOString().slice(0, 10)}.csv`,
         headers: [
           { key: 'campus_id', label: 'Sede ID' },
           { key: 'campus_name', label: 'Sede' },

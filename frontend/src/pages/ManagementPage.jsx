@@ -12,6 +12,7 @@ import PaginationControls from '../components/PaginationControls';
 import CertificateGeneratorLauncher from '../components/certificates/CertificateGeneratorLauncher';
 import CertificateLibraryPage from './CertificateLibraryPage';
 import PaymentsPage from './PaymentsPage';
+import CashRegisterPage from './CashRegisterPage';
 import TransfersManager from './transfers/TransfersManager';
 
 const createStudentDefaults = () => ({
@@ -301,6 +302,8 @@ export default function ManagementPage() {
   const canManagePeriods = hasPermission(PERMISSIONS.PERIODS_MANAGE);
   const canViewPayments = hasPermission(PERMISSIONS.PAYMENTS_VIEW);
   const canManagePayments = hasPermission(PERMISSIONS.PAYMENTS_MANAGE);
+  const canViewCashRegister = hasPermission(PERMISSIONS.CASH_REGISTER_VIEW);
+  const canManageCashRegister = hasPermission(PERMISSIONS.CASH_REGISTER_MANAGE);
   const canViewEnrollments = hasPermission(PERMISSIONS.ENROLLMENTS_VIEW);
   const canManageEnrollments = hasPermission(PERMISSIONS.ENROLLMENTS_MANAGE);
   const canManageInstallments = hasPermission(PERMISSIONS.INSTALLMENTS_MANAGE);
@@ -316,6 +319,7 @@ export default function ManagementPage() {
   const canReadCoursesModule = canReadCourses;
   const canReadCampuses = canViewCampuses || canManageCampuses;
   const canReadPayments = canViewPayments || canManagePayments;
+  const canReadCashRegister = canViewCashRegister || canManageCashRegister;
   const canReadEnrollments = canViewEnrollments || canManageEnrollments;
   const userRoles = user?.roles || [];
   const assignedCampusIds = user?.campus_ids || (user?.base_campus_id ? [user.base_campus_id] : []);
@@ -340,10 +344,19 @@ export default function ManagementPage() {
       campuses: canReadCampuses,
       periods: canReadPeriods,
       payments: canReadPayments,
+      cash_register: canReadCashRegister,
       certificates: canReadPayments,
       certificate_history: canReadPayments,
     }),
-    [canReadCampuses, canReadCoursesModule, canReadPayments, canReadPeriods, canReadStudents, canReadTeachers],
+    [
+      canReadCampuses,
+      canReadCashRegister,
+      canReadCoursesModule,
+      canReadPayments,
+      canReadPeriods,
+      canReadStudents,
+      canReadTeachers,
+    ],
   );
 
   const tabs = useMemo(
@@ -2583,7 +2596,7 @@ export default function ManagementPage() {
   if (!firstEnabledTab) {
     return (
       <section className="card">
-        <h1 className="text-xl font-semibold">Gestión académica</h1>
+        <h1 className="text-xl font-semibold">Operaciones administrativas</h1>
         <p className="mt-2 text-sm text-primary-700">No tienes permisos para acceder a este módulo.</p>
       </section>
     );
@@ -2593,26 +2606,23 @@ export default function ManagementPage() {
     <section className="space-y-6">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-primary-900">Gestión académica</h1>
-          <p className="text-sm text-primary-700">
-            Crea, edita y administra alumnos, docentes, cursos, pagos y certificados desde una sola ventana.
-          </p>
+          <h1 className="text-2xl font-semibold text-primary-900">Operaciones administrativas</h1>
         </div>
         <div className="flex flex-wrap gap-2">
           <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
-            {studentTotal || students.length} alumnos
+            Alumnos {studentTotal || students.length}
           </span>
           <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-800">
-            {teacherTotal || teachers.length} docentes
+            Docentes {teacherTotal || teachers.length}
           </span>
           <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
-            {courseTotal || courses.length} cursos
+            Cursos {courseTotal || courses.length}
           </span>
           <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-800">
-            {campuses.length} sedes
+            Sedes {campuses.length}
           </span>
           <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
-            {periods.length} periodos
+            Periodos {periods.length}
           </span>
         </div>
       </div>
@@ -4357,6 +4367,8 @@ export default function ManagementPage() {
       ) : null}
 
       {activeTab === 'payments' && canReadPayments ? <PaymentsPage /> : null}
+
+      {activeTab === 'cash_register' && canReadCashRegister ? <CashRegisterPage /> : null}
 
       {activeTab === 'certificates' && canReadPayments ? (
         <article className="space-y-4">

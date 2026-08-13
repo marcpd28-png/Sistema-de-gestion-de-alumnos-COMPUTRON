@@ -11,6 +11,10 @@ const validate = require('../middlewares/validate');
 const { authenticate } = require('../middlewares/auth');
 const { parseCampusScopeId } = require('../utils/campusScope');
 const { getUserPermissionCodes } = require('../services/permissions.service');
+const {
+  removeUploadedFileQuietly,
+  validateUploadedFileSignature,
+} = require('../utils/fileValidation');
 
 const router = express.Router();
 
@@ -32,6 +36,22 @@ const courseLibraryMimeTypes = new Set([
   'image/png',
   'image/webp',
 ]);
+const courseLibraryExtensions = new Set([
+  '.pdf',
+  '.doc',
+  '.docx',
+  '.xls',
+  '.xlsx',
+  '.ppt',
+  '.pptx',
+  '.txt',
+  '.zip',
+  '.jpg',
+  '.jpeg',
+  '.png',
+  '.webp',
+]);
+const courseLibraryGenericMimeTypes = new Set(['application/octet-stream']);
 
 fs.mkdirSync(courseLibraryDir, { recursive: true });
 
@@ -58,6 +78,15 @@ const courseLibraryUpload = multer({
         ),
       );
     }
+    const extension = path.extname(file.originalname || '').toLowerCase();
+    if (!courseLibraryExtensions.has(extension)) {
+      return callback(
+        new ApiError(
+          400,
+          'Extension no permitida. Usa PDF, Office, TXT, ZIP o imagenes JPG/PNG/WEBP.',
+        ),
+      );
+    }
 
     return callback(null, true);
   },
@@ -76,6 +105,19 @@ const resourceDeleteSchema = z.object({
     resourceId: z.coerce.number().int().positive(),
   }),
   query: z.object({}).optional(),
+});
+
+const resourceFileSchema = z.object({
+  body: z.object({}).optional(),
+  params: z.object({
+    assignmentId: z.coerce.number().int().positive(),
+    resourceId: z.coerce.number().int().positive(),
+  }),
+  query: z
+    .object({
+      download: z.string().optional(),
+    })
+    .optional(),
 });
 
 const createResourceBodySchema = z.object({
@@ -164,10 +206,56 @@ const buildFrontendAwareAbsoluteUrl = (req, relativePath) => {
   return `${getRequestProtocol(req)}://${host}${normalizedRelativePath}`;
 };
 
-const buildCourseLibraryFileUrl = (req, fileName) => {
+const buildCourseLibraryStorageUrl = (req, fileName) => {
   const encodedFileName = encodeURIComponent(fileName);
   const relativeUrl = `/api/uploads/course-library/${encodedFileName}`;
   return buildFrontendAwareAbsoluteUrl(req, relativeUrl);
+};
+
+const buildCourseLibraryFileUrl = (req, assignmentId, resourceId) => {
+  const relativeUrl = `/api/course-library/assignments/${assignmentId}/resources/${resourceId}/file`;
+  return buildFrontendAwareAbsoluteUrl(req, relativeUrl);
+};
+
+const toDownloadFlag = (value) => {
+  const normalized = String(value || '').trim().toLowerCase();
+  return normalized === '1' || normalized === 'true' || normalized === 'si';
+};
+
+const toSafeHeaderFilename = (fileName = 'archivo') => {
+  const normalized = String(fileName || 'archivo').trim() || 'archivo';
+  return normalized.replace(/[^\w.\- ]+/g, '_').slice(0, 180) || 'archivo';
+};
+
+const assertResolvedPathInsideDir = (filePath, baseDir) => {
+  const resolvedFilePath = path.resolve(filePath || '');
+  const resolvedBaseDir = path.resolve(baseDir);
+  if (!resolvedFilePath.startsWith(`${resolvedBaseDir}${path.sep}`)) {
+    throw new ApiError(400, 'Ruta de archivo invalida.');
+  }
+  return resolvedFilePath;
+};
+
+const sendProtectedFile = (res, { filePath, fileName, mimeType, download = false }) => {
+  const resolvedFilePath = assertResolvedPathInsideDir(filePath, courseLibraryDir);
+  if (!fs.existsSync(resolvedFilePath)) {
+    throw new ApiError(404, 'Archivo no encontrado en el servidor.');
+  }
+
+  const safeFileName = toSafeHeaderFilename(fileName);
+  res.setHeader('Cache-Control', 'no-store');
+  res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
+  res.setHeader('Referrer-Policy', 'no-referrer');
+  res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader(
+    'Content-Disposition',
+    `${download ? 'attachment' : 'inline'}; filename="${safeFileName}"`,
+  );
+  if (mimeType) {
+    res.type(mimeType);
+  }
+
+  return res.sendFile(resolvedFilePath);
 };
 
 const removeStoredFile = (filePath) => {
@@ -326,6 +414,26 @@ const resolveAssignmentAccess = async (req, assignmentId, { requireWrite = false
 
 const uploadCourseLibraryResource = (req, res, next) => {
   courseLibraryUpload.single('file')(req, res, (error) => {
+    if (!error) {
+      if (!req.file) return next();
+
+      try {
+        validateUploadedFileSignature({
+          filePath: req.file.path,
+          originalName: req.file.originalname,
+          mimetype: req.file.mimetype,
+          allowedExtensions: courseLibraryExtensions,
+          allowedMimeTypes: courseLibraryMimeTypes,
+          genericMimeTypes: courseLibraryGenericMimeTypes,
+          label: 'archivo',
+        });
+        return next();
+      } catch (validationError) {
+        removeUploadedFileQuietly(req.file.path);
+        return next(validationError);
+      }
+    }
+
     if (error instanceof multer.MulterError && error.code === 'LIMIT_FILE_SIZE') {
       return next(
         new ApiError(400, 'El archivo excede el limite permitido de 15 MB para el aula virtual.'),
@@ -386,12 +494,52 @@ router.get(
       [assignmentId],
     );
 
+    const items = rows.map((row) => ({
+      ...row,
+      file_url: buildCourseLibraryFileUrl(req, assignmentId, row.id),
+    }));
+
     return res.json({
       item: access.assignment,
-      items: rows,
+      items,
       meta: {
         can_write: Boolean(access.canWrite),
       },
+    });
+  }),
+);
+
+router.get(
+  '/assignments/:assignmentId/resources/:resourceId/file',
+  validate(resourceFileSchema),
+  asyncHandler(async (req, res) => {
+    const { assignmentId, resourceId } = req.validated.params;
+    await resolveAssignmentAccess(req, assignmentId);
+
+    const resourceResult = await query(
+      `SELECT id, assignment_id, file_name, file_url, mime_type
+       FROM course_library_resources
+       WHERE id = $1
+         AND assignment_id = $2
+       LIMIT 1`,
+      [resourceId, assignmentId],
+    );
+
+    if (!resourceResult.rowCount) {
+      throw new ApiError(404, 'No se encontro el archivo solicitado.');
+    }
+
+    const resource = resourceResult.rows[0];
+    const filePath = resolveStoredResourcePath(resource.file_url);
+    if (!filePath) {
+      throw new ApiError(404, 'Archivo no disponible para descarga segura.');
+    }
+
+    return sendProtectedFile(res, {
+      filePath,
+      fileName: resource.file_name || `archivo_${resource.id}`,
+      mimeType: resource.mime_type,
+      download: toDownloadFlag(req.validated.query?.download),
     });
   }),
 );
@@ -456,15 +604,19 @@ router.post(
         payload.title || fallbackTitle,
         payload.description || null,
         originalName.slice(0, 220),
-        buildCourseLibraryFileUrl(req, req.file.filename),
+        buildCourseLibraryStorageUrl(req, req.file.filename),
         String(req.file.mimetype || '').slice(0, 120) || null,
         Number(req.file.size || 0),
       ],
     );
+    const createdResource = insertResult.rows[0];
 
     return res.status(201).json({
       message: 'Archivo cargado en el aula virtual.',
-      item: insertResult.rows[0],
+      item: {
+        ...createdResource,
+        file_url: buildCourseLibraryFileUrl(req, assignmentId, createdResource.id),
+      },
     });
   }),
 );

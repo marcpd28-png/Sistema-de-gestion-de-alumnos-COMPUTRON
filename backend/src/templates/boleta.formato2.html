@@ -128,6 +128,15 @@
         margin-bottom: 8px;
       }
 
+      .payment-detail {
+        margin: 2px 0 8px;
+        border-top: 1px solid #d5dce8;
+        padding-top: 6px;
+        font-size: 11px;
+        line-height: 1.35;
+        word-break: break-word;
+      }
+
       .summary-row strong {
         font-size: 13px;
       }
@@ -231,9 +240,11 @@
             <strong>{{TOTAL_CURRENCY}}</strong>
           </div>
           <div class="summary-row">
-            <span>A Cta:</span>
+            <span>{{PAYMENT_RECEIVED_LABEL}}:</span>
             <strong>{{A_CUENTA_CURRENCY}}</strong>
           </div>
+          {{PAYMENT_SUMMARY_ROW_F2}}
+          {{CHANGE_ROW_F2}}
           <div class="summary-row">
             <span>Saldo:</span>
             <strong>{{SALDO_CURRENCY}}</strong>

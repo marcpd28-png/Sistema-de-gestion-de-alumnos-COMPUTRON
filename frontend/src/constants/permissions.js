@@ -32,6 +32,8 @@ export const PERMISSIONS = {
   PAYMENTS_VIEW: 'payments.view',
   PAYMENTS_MANAGE: 'payments.manage',
   PAYMENTS_AUDIT_VIEW: 'payments.audit.view',
+  CASH_REGISTER_VIEW: 'cash_register.view',
+  CASH_REGISTER_MANAGE: 'cash_register.manage',
   REPORTS_VIEW: 'reports.view',
   NOTIFICATIONS_VIEW: 'notifications.view',
   NOTIFICATIONS_MANAGE: 'notifications.manage',

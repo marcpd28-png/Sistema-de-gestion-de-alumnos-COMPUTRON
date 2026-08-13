@@ -140,7 +140,7 @@ export default function NotificationsPage() {
       }));
 
       await downloadCsv({
-        filename: `notificaciones_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        filename: `notificaciones_${new Date().toISOString().slice(0, 10)}.csv`,
         headers: [
           { key: 'id', label: 'ID' },
           { key: 'fecha_programada', label: 'Fecha programada' },

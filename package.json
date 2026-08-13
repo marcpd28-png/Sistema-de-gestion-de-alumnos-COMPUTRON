@@ -9,7 +9,8 @@
     "dev": "concurrently -n BACKEND,FRONTEND -c green,blue \"npm run dev --prefix backend\" \"npm run dev --prefix frontend\"",
     "tunnel": "bash ./scripts/devtunnel-dev.sh",
     "build": "npm run build --prefix frontend",
-    "db:init": "npm run db:init --prefix backend"
+    "db:init": "npm run db:init --prefix backend",
+    "test": "npm test --prefix backend && npm test --prefix frontend"
   },
   "keywords": [
     "computron",

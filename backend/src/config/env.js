@@ -17,6 +17,31 @@ const parsePositiveNumber = (rawValue, fallback, envName) => {
   return parsed;
 };
 
+const parseOptionalPositiveInteger = (rawValue, envName) => {
+  if (rawValue === undefined || rawValue === null || rawValue === '') return null;
+  const parsed = Number(rawValue);
+  if (!Number.isInteger(parsed) || parsed <= 0) {
+    throw new Error(`ENV inválido: ${envName} debe ser un entero positivo.`);
+  }
+  return parsed;
+};
+
+const parseNonNegativeNumber = (rawValue, fallback, envName) => {
+  const parsed = Number(rawValue ?? fallback);
+  if (!Number.isFinite(parsed) || parsed < 0) {
+    throw new Error(`ENV inválido: ${envName} debe ser un número mayor o igual a cero.`);
+  }
+  return parsed;
+};
+
+const parseBooleanEnv = (rawValue, fallback = false) => {
+  if (rawValue === undefined || rawValue === null || rawValue === '') return fallback;
+  const normalized = String(rawValue).trim().toLowerCase();
+  return ['1', 'true', 'si', 'yes', 'on'].includes(normalized);
+};
+
+const normalizeBaseUrl = (rawValue) => String(rawValue || '').trim().replace(/\/+$/, '');
+
 const rawFrontendUrls = process.env.FRONTEND_URLS || process.env.FRONTEND_URL || 'http://localhost:8100';
 const rawFrontendUrlPatterns = process.env.FRONTEND_URL_PATTERNS || process.env.FRONTEND_ORIGIN_PATTERNS || '';
 
@@ -62,6 +87,26 @@ const env = {
     pass: process.env.SMTP_PASS || '',
     from: process.env.SMTP_FROM || 'no-reply@computron.local',
   },
+  sunatApi: {
+    baseUrl: normalizeBaseUrl(process.env.SUNAT_API_BASE_URL),
+    token: process.env.SUNAT_API_TOKEN || '',
+    companyId: parseOptionalPositiveInteger(process.env.SUNAT_API_COMPANY_ID, 'SUNAT_API_COMPANY_ID'),
+    branchId: parseOptionalPositiveInteger(process.env.SUNAT_API_BRANCH_ID, 'SUNAT_API_BRANCH_ID'),
+    boletaSeries: process.env.SUNAT_API_BOLETA_SERIE || 'B001',
+    facturaSeries: process.env.SUNAT_API_FACTURA_SERIE || 'F001',
+    boletaSendMode: process.env.SUNAT_API_BOLETA_METODO_ENVIO || 'resumen_diario',
+    defaultUnit: process.env.SUNAT_API_DEFAULT_UNIT || 'ZZ',
+    defaultItemCode: process.env.SUNAT_API_DEFAULT_ITEM_CODE || 'SERV',
+    defaultProductSunatCode: process.env.SUNAT_API_PRODUCT_SUNAT_CODE || '',
+    defaultUbigeo: process.env.SUNAT_API_DEFAULT_UBIGEO || '',
+    defaultDistrito: process.env.SUNAT_API_DEFAULT_DISTRITO || '',
+    defaultProvincia: process.env.SUNAT_API_DEFAULT_PROVINCIA || '',
+    defaultDepartamento: process.env.SUNAT_API_DEFAULT_DEPARTAMENTO || '',
+    taxPercent: parseNonNegativeNumber(process.env.SUNAT_API_TAX_PERCENT, 0, 'SUNAT_API_TAX_PERCENT'),
+    igvAffectation: process.env.SUNAT_API_IGV_AFFECTATION || '30',
+    pricesIncludeIgv: parseBooleanEnv(process.env.SUNAT_API_PRICES_INCLUDE_IGV, true),
+    timeoutMs: parsePositiveNumber(process.env.SUNAT_API_TIMEOUT_MS, 20000, 'SUNAT_API_TIMEOUT_MS'),
+  },
   permissionCacheTtlMs: parsePositiveNumber(process.env.PERMISSION_CACHE_TTL_MS, 30000, 'PERMISSION_CACHE_TTL_MS'),
   responseCacheTtlMs: parsePositiveNumber(process.env.RESPONSE_CACHE_TTL_MS, 900000, 'RESPONSE_CACHE_TTL_MS'),
   responseCacheMaxEntries: parsePositiveNumber(
@@ -79,6 +124,10 @@ const env = {
     200,
     'NOTIFICATION_WORKER_MAX_QUEUE',
   ),
+  apiRateLimit: {
+    windowMs: parsePositiveNumber(process.env.API_RATE_LIMIT_WINDOW_MS, 15 * 60 * 1000, 'API_RATE_LIMIT_WINDOW_MS'),
+    max: parsePositiveNumber(process.env.API_RATE_LIMIT_MAX, 2000, 'API_RATE_LIMIT_MAX'),
+  },
 };
 
 const failIfInvalid = (condition, message) => {
@@ -125,6 +174,23 @@ if (hasPartialSmtp) {
   failIfInvalid(Boolean(env.smtp.host), 'SMTP_HOST es requerido cuando SMTP está habilitado.');
   failIfInvalid(Boolean(env.smtp.user), 'SMTP_USER es requerido cuando SMTP está habilitado.');
   failIfInvalid(Boolean(env.smtp.pass), 'SMTP_PASS es requerido cuando SMTP está habilitado.');
+}
+
+const hasPartialSunatConfig =
+  Boolean(env.sunatApi.baseUrl) ||
+  Boolean(env.sunatApi.token) ||
+  Boolean(env.sunatApi.companyId) ||
+  Boolean(env.sunatApi.branchId);
+
+if (hasPartialSunatConfig) {
+  failIfInvalid(Boolean(env.sunatApi.baseUrl), 'SUNAT_API_BASE_URL es requerido cuando SUNAT está habilitado.');
+  failIfInvalid(Boolean(env.sunatApi.token), 'SUNAT_API_TOKEN es requerido cuando SUNAT está habilitado.');
+  failIfInvalid(Boolean(env.sunatApi.companyId), 'SUNAT_API_COMPANY_ID es requerido cuando SUNAT está habilitado.');
+  failIfInvalid(Boolean(env.sunatApi.branchId), 'SUNAT_API_BRANCH_ID es requerido cuando SUNAT está habilitado.');
+  failIfInvalid(
+    ['individual', 'resumen_diario'].includes(env.sunatApi.boletaSendMode),
+    'SUNAT_API_BOLETA_METODO_ENVIO debe ser individual o resumen_diario.',
+  );
 }
 
 module.exports = env;

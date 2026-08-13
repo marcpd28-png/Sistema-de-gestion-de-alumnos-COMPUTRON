@@ -1,7 +1,6 @@
 import { NavLink, Outlet, useLocation, useNavigate } from 'react-router-dom';
 import { useEffect, useMemo, useState } from 'react';
 import {
-  ArrowLeftRight,
   BookOpenText,
   CalendarRange,
   ClipboardCheck,
@@ -11,12 +10,10 @@ import {
   LibraryBig,
   LogOut,
   Menu,
-  Moon,
   NotebookTabs,
   ReceiptText,
   School,
   ShieldCheck,
-  Sun,
   UsersRound,
   Wallet,
 } from 'lucide-react';
@@ -29,6 +26,27 @@ import { preloadCoreRoutes, preloadRoute } from '../utils/routePreload';
 const navItems = [
   { to: '/', label: 'Dashboard', icon: LayoutDashboard, permissions: [PERMISSIONS.DASHBOARD_VIEW] },
   { to: '/users', label: 'Usuarios', icon: UsersRound, permissions: [PERMISSIONS.USERS_VIEW] },
+];
+
+const managementMenuGroups = [
+  {
+    key: 'finance',
+    label: 'Caja y finanzas',
+    icon: Wallet,
+    itemKeys: ['cash_register', 'payments'],
+  },
+  {
+    key: 'academic',
+    label: 'Gestión académica',
+    icon: School,
+    itemKeys: ['students', 'students_list', 'transfers', 'teachers', 'courses', 'campuses', 'periods'],
+  },
+  {
+    key: 'documents',
+    label: 'Documentos',
+    icon: ReceiptText,
+    itemKeys: ['certificates', 'certificate_history'],
+  },
 ];
 
 const aulaVirtualItems = [
@@ -70,42 +88,16 @@ const studentNavItems = [
 export default function AppShell() {
   const [open, setOpen] = useState(false);
   const [isDashboardExpanded, setIsDashboardExpanded] = useState(false);
-  const [isManagementExpanded, setIsManagementExpanded] = useState(false);
+  const [expandedManagementGroup, setExpandedManagementGroup] = useState(null);
   const [isAulaVirtualExpanded, setIsAulaVirtualExpanded] = useState(false);
+  const [isAdminExpanded, setIsAdminExpanded] = useState(false);
   const { user, logout, hasAnyPermission } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
 
-  useEffect(() => {
-    let cancelPreload = null;
-
-    const startPreload = () => {
-      if (cancelPreload) return;
-      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
-      cancelPreload = preloadCoreRoutes();
-    };
-
-    const timeoutId = window.setTimeout(startPreload, 2200);
-    const handleVisibilityChange = () => {
-      if (document.visibilityState === 'visible' && !cancelPreload) {
-        startPreload();
-      }
-    };
-
-    document.addEventListener('visibilitychange', handleVisibilityChange);
-
-    return () => {
-      window.clearTimeout(timeoutId);
-      document.removeEventListener('visibilitychange', handleVisibilityChange);
-      cancelPreload?.();
-    };
-  }, []);
-
   const roles = useMemo(() => user?.roles || [], [user]);
   const isDocenteProfile = roles.length === 1 && roles.includes('DOCENTE');
   const isAlumnoProfile = roles.length === 1 && roles.includes('ALUMNO');
-  const isTeacher2222 =
-    user?.email?.trim().toLowerCase() === '2222@gmail.com' && roles.includes('DOCENTE');
   const isDashboardRoute = location.pathname === '/';
   const isManagementRoute = location.pathname === '/management';
   const aulaVirtualActivePaths = ['/courses', '/calendar', '/virtual-library'];
@@ -142,6 +134,16 @@ export default function AppShell() {
     });
   }, [hasAnyPermission, isAlumnoProfile, isDocenteProfile]);
 
+  const visibleManagementGroups = useMemo(() => {
+    const visibleItemsByKey = new Map(visibleManagementItems.map((item) => [item.key, item]));
+    return managementMenuGroups
+      .map((group) => ({
+        ...group,
+        items: group.itemKeys.map((itemKey) => visibleItemsByKey.get(itemKey)).filter(Boolean),
+      }))
+      .filter((group) => group.items.length > 0);
+  }, [visibleManagementItems]);
+
   const visibleAulaVirtualItems = useMemo(() => {
     if (isAlumnoProfile) {
       return [];
@@ -154,12 +156,28 @@ export default function AppShell() {
   }, [hasAnyPermission, isAlumnoProfile, isDocenteProfile]);
 
   const visibleDashboardItems = useMemo(() => {
-    if (isAlumnoProfile || isTeacher2222) {
+    if (isAlumnoProfile) {
       return [];
     }
 
     return DASHBOARD_SECTION_ITEMS.filter((item) => hasAnyPermission(item.permissions || []));
-  }, [hasAnyPermission, isAlumnoProfile, isTeacher2222]);
+  }, [hasAnyPermission, isAlumnoProfile]);
+
+  const visibleAdminItems = useMemo(() => {
+    if (isAlumnoProfile || isDocenteProfile) {
+      return [];
+    }
+
+    return navItems.filter((item) => {
+      if (item.to === '/') return false;
+      if (item.adminOnly && isDocenteProfile) return false;
+      if (!hasAnyPermission(item.permissions || [])) return false;
+      if (Array.isArray(item.roles) && item.roles.length > 0 && !item.roles.some((role) => roles.includes(role))) {
+        return false;
+      }
+      return true;
+    });
+  }, [hasAnyPermission, isAlumnoProfile, isDocenteProfile, roles]);
 
   const activeDashboardSection = useMemo(() => {
     if (!visibleDashboardItems.length) return null;
@@ -179,42 +197,82 @@ export default function AppShell() {
     return visibleManagementItems[0]?.key || null;
   }, [requestedManagementSection, visibleManagementItems]);
 
-  const visibleItems = navItems.filter((item) => {
+  const activeManagementGroupKey = useMemo(() => {
+    if (!activeManagementSection) return null;
+    return visibleManagementGroups.find((group) =>
+      group.items.some((item) => item.key === activeManagementSection),
+    )?.key || null;
+  }, [activeManagementSection, visibleManagementGroups]);
+
+  const resolvedItems = isAlumnoProfile ? studentNavItems : visibleAdminItems;
+  const priorityPreloadRoutes = useMemo(() => {
+    if (!user) return [];
+
     if (isAlumnoProfile) {
-      return false;
+      return resolvedItems.map((item) => item.to).slice(0, 4);
     }
-    if (item.adminOnly && isDocenteProfile) return false;
-    if (item.to === '/certificates') return false;
-    if (!hasAnyPermission(item.permissions || [])) return false;
-    if (Array.isArray(item.roles) && item.roles.length > 0 && !item.roles.some((role) => roles.includes(role))) {
-      return false;
-    }
-    if (isTeacher2222 && item.to === '/') return false;
-    if (isDocenteProfile && item.to === '/teachers') return false;
-    return true;
-  });
-  const secondaryItems = visibleItems.filter((item) => item.to !== '/');
-  const resolvedItems = isAlumnoProfile ? studentNavItems : secondaryItems;
+
+    const routes = [];
+    if (visibleDashboardItems.length) routes.push('/');
+    if (visibleManagementItems.length) routes.push('/management');
+    if (visibleAulaVirtualItems.length) routes.push('/courses');
+    if (visibleAdminItems.length) routes.push('/users');
+    return routes;
+  }, [
+    isAlumnoProfile,
+    resolvedItems,
+    user,
+    visibleAdminItems.length,
+    visibleAulaVirtualItems.length,
+    visibleDashboardItems.length,
+    visibleManagementItems.length,
+  ]);
+
+  useEffect(() => {
+    let cancelPreload = null;
+
+    const startPreload = () => {
+      if (cancelPreload || priorityPreloadRoutes.length === 0) return;
+      if (typeof document !== 'undefined' && document.visibilityState !== 'visible') return;
+      cancelPreload = preloadCoreRoutes(priorityPreloadRoutes);
+    };
+
+    const timeoutId = window.setTimeout(startPreload, 2200);
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible' && !cancelPreload) {
+        startPreload();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.clearTimeout(timeoutId);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      cancelPreload?.();
+    };
+  }, [priorityPreloadRoutes]);
 
   const isCertificatesRoute = location.pathname === '/certificates';
   const dashboardMenuActive = isDashboardRoute || isDashboardExpanded;
-  const managementMenuActive = isManagementRoute || isManagementExpanded;
+  const isAdminRoute = location.pathname === '/users';
+  const adminMenuActive = isAdminRoute || isAdminExpanded;
 
   const renderSidebarLabel = (label, Icon, active, { trailing = null, compact = false } = {}) => (
-    <span className="flex items-center justify-between gap-3">
-      <span className="flex min-w-0 items-center gap-3">
+    <span className="flex items-center justify-between gap-2">
+      <span className="flex min-w-0 items-center gap-2">
         {Icon ? (
           <span
-            className={`flex shrink-0 items-center justify-center ${compact ? 'h-7 w-7 rounded-lg' : 'h-8 w-8 rounded-xl'
+            className={`flex shrink-0 items-center justify-center ${compact ? 'h-6 w-6 rounded-md' : 'h-7 w-7 rounded-md'
               } transition ${active
-                ? 'bg-white/15 text-white'
-                : 'bg-primary-800/90 text-accent-100 group-hover:bg-primary-700 group-hover:text-white'
+                ? 'bg-white/10 text-white'
+                : 'text-primary-200 group-hover:bg-primary-800 group-hover:text-white'
               }`}
           >
-            <Icon className={compact ? 'h-4 w-4' : 'h-4 w-4'} />
+            <Icon className={compact ? 'h-3.5 w-3.5' : 'h-4 w-4'} />
           </span>
         ) : null}
-        <span className={compact ? 'truncate text-xs font-semibold uppercase tracking-[0.08em]' : 'truncate'}>
+        <span className={compact ? 'truncate text-xs font-medium' : 'truncate'}>
           {label}
         </span>
       </span>
@@ -223,22 +281,51 @@ export default function AppShell() {
   );
 
   useEffect(() => {
-    if (!isDashboardRoute) {
-      setIsDashboardExpanded(false);
+    if (isDashboardRoute && visibleDashboardItems.length > 0) {
+      setIsDashboardExpanded(true);
+      setExpandedManagementGroup(null);
+      setIsAulaVirtualExpanded(false);
+      setIsAdminExpanded(false);
+      return;
     }
-  }, [isDashboardRoute]);
+
+    setIsDashboardExpanded(false);
+  }, [isDashboardRoute, visibleDashboardItems.length]);
 
   useEffect(() => {
     if (!isManagementRoute) {
-      setIsManagementExpanded(false);
+      setExpandedManagementGroup(null);
+      return;
     }
-  }, [isManagementRoute]);
+
+    if (activeManagementGroupKey) {
+      setExpandedManagementGroup(activeManagementGroupKey);
+    }
+  }, [activeManagementGroupKey, isManagementRoute]);
 
   useEffect(() => {
-    if (!isAulaVirtualRoute) {
-      setIsAulaVirtualExpanded(false);
+    if (isAulaVirtualRoute && visibleAulaVirtualItems.length > 0) {
+      setIsAulaVirtualExpanded(true);
+      setIsDashboardExpanded(false);
+      setExpandedManagementGroup(null);
+      setIsAdminExpanded(false);
+      return;
     }
-  }, [isAulaVirtualRoute]);
+
+    setIsAulaVirtualExpanded(false);
+  }, [isAulaVirtualRoute, visibleAulaVirtualItems.length]);
+
+  useEffect(() => {
+    if (isAdminRoute && visibleAdminItems.length > 0) {
+      setIsAdminExpanded(true);
+      setIsDashboardExpanded(false);
+      setExpandedManagementGroup(null);
+      setIsAulaVirtualExpanded(false);
+      return;
+    }
+
+    setIsAdminExpanded(false);
+  }, [isAdminRoute, visibleAdminItems.length]);
 
   const handleLogout = async () => {
     await logout();
@@ -247,16 +334,18 @@ export default function AppShell() {
 
   const handlePrimaryNavClick = () => {
     setIsDashboardExpanded(false);
-    setIsManagementExpanded(false);
+    setExpandedManagementGroup(null);
     setIsAulaVirtualExpanded(false);
+    setIsAdminExpanded(false);
     setOpen(false);
   };
 
   const handleDashboardClick = () => {
     const nextExpanded = !isDashboardExpanded;
     setIsDashboardExpanded(nextExpanded);
-    setIsManagementExpanded(false);
+    setExpandedManagementGroup(null);
     setIsAulaVirtualExpanded(false);
+    setIsAdminExpanded(false);
 
     if (nextExpanded) {
       const defaultSectionKey = activeDashboardSection || visibleDashboardItems[0]?.key;
@@ -266,15 +355,16 @@ export default function AppShell() {
     }
   };
 
-  const handleManagementClick = () => {
-    const nextExpanded = !isManagementExpanded;
-    setIsManagementExpanded(nextExpanded);
+  const handleManagementGroupClick = (group) => {
+    const nextExpandedGroup = expandedManagementGroup === group.key ? null : group.key;
+    setExpandedManagementGroup(nextExpandedGroup);
     setIsDashboardExpanded(false);
     setIsAulaVirtualExpanded(false);
+    setIsAdminExpanded(false);
 
-    if (nextExpanded) {
-      const defaultSectionKey = activeManagementSection || visibleManagementItems[0]?.key;
-      if (defaultSectionKey && !isManagementRoute) {
+    if (nextExpandedGroup) {
+      const defaultSectionKey = group.items[0]?.key;
+      if (defaultSectionKey && (!isManagementRoute || activeManagementGroupKey !== group.key)) {
         navigate(buildManagementSectionPath(defaultSectionKey));
       }
     }
@@ -284,12 +374,25 @@ export default function AppShell() {
     const nextExpanded = !isAulaVirtualExpanded;
     setIsAulaVirtualExpanded(nextExpanded);
     setIsDashboardExpanded(false);
-    setIsManagementExpanded(false);
+    setExpandedManagementGroup(null);
+    setIsAdminExpanded(false);
 
     if (nextExpanded && visibleAulaVirtualItems.length > 0) {
       if (!isAulaVirtualRoute) {
         navigate(visibleAulaVirtualItems[0].to);
       }
+    }
+  };
+
+  const handleAdminClick = () => {
+    const nextExpanded = !isAdminExpanded;
+    setIsAdminExpanded(nextExpanded);
+    setIsDashboardExpanded(false);
+    setExpandedManagementGroup(null);
+    setIsAulaVirtualExpanded(false);
+
+    if (nextExpanded && visibleAdminItems.length > 0 && !isAdminRoute) {
+      navigate(visibleAdminItems[0].to);
     }
   };
 
@@ -299,11 +402,10 @@ export default function AppShell() {
         className={`fixed left-0 top-0 z-20 flex h-full w-[260px] transform flex-col overflow-y-auto border-r border-primary-200 bg-primary-900 text-primary-50 transition lg:static lg:translate-x-0 ${open ? 'translate-x-0' : '-translate-x-full'
           }`}
       >
-        <div className="p-5 pb-2">
-          <p className="text-xs uppercase tracking-[0.2em] text-primary-200">Instituto</p>
+        <div className="p-4 pb-2">
           <h1 className="text-xl font-semibold">Computron</h1>
-          <p className="mt-2 text-sm text-primary-200">{user?.first_name} {user?.last_name}</p>
-          <p className="text-xs text-primary-300">{roles.join(' · ')}</p>
+          <p className="mt-2 truncate text-sm text-slate-300">{user?.first_name} {user?.last_name}</p>
+          <p className="truncate text-xs text-slate-400">{roles.join(' · ')}</p>
         </div>
 
         <nav className="flex-1 space-y-1 p-3 pb-5">
@@ -377,55 +479,64 @@ export default function AppShell() {
                 </div>
               ) : null}
 
-              {visibleManagementItems.length ? (
-                <div className="space-y-1">
-                  <button
-                    type="button"
-                    onClick={handleManagementClick}
-                    onMouseEnter={() => preloadRoute('/management')}
-                    onFocus={() => preloadRoute('/management')}
-                    className={
-                      `group block w-full rounded-xl px-3 py-2 text-left text-sm font-medium transition ${managementMenuActive
-                        ? 'bg-primary-500 text-white'
-                        : 'text-primary-100 hover:bg-primary-800 hover:text-white'
-                      }`
-                    }
-                  >
-                    {renderSidebarLabel('Gestión académica', School, managementMenuActive, {
-                      trailing: <ChevronIcon className={`h-4 w-4 transition ${isManagementExpanded ? 'rotate-180' : ''}`} />,
-                    })}
-                  </button>
+              {visibleManagementGroups.map((group) => {
+                const isGroupExpanded = expandedManagementGroup === group.key;
+                const isGroupActive = isGroupExpanded || (isManagementRoute && activeManagementGroupKey === group.key);
+                const GroupIcon = group.icon;
 
-                  <div
-                    className={`overflow-hidden transition-all duration-200 ${isManagementExpanded ? 'max-h-[420px] opacity-100' : 'max-h-0 opacity-0'
-                      }`}
-                  >
-                    <div className="ml-3 space-y-1 pl-3 pt-1">
-                      {visibleManagementItems.map((item) => {
-                        const isSubItemActive = activeManagementSection === item.key;
-                        const itemPath = buildManagementSectionPath(item.key);
-                        return (
-                          <NavLink
-                            key={item.key}
-                            to={itemPath}
-                            onClick={() => setOpen(false)}
-                            onMouseEnter={() => preloadRoute(itemPath)}
-                            onFocus={() => preloadRoute(itemPath)}
-                            className={() =>
-                              `group block rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] transition ${isSubItemActive
-                                ? 'bg-primary-800 text-white'
-                                : 'text-primary-200 hover:bg-primary-800 hover:text-white'
-                              }`
-                            }
-                          >
-                            {renderSidebarLabel(item.label, item.icon, isSubItemActive, { compact: true })}
-                          </NavLink>
-                        );
+                return (
+                  <div key={group.key} className="space-y-1">
+                    <button
+                      type="button"
+                      onClick={() => handleManagementGroupClick(group)}
+                      onMouseEnter={() => preloadRoute('/management')}
+                      onFocus={() => preloadRoute('/management')}
+                      className={
+                        `group block w-full rounded-xl px-3 py-2 text-left text-sm font-medium transition ${isGroupActive
+                          ? 'bg-primary-500 text-white'
+                          : 'text-primary-100 hover:bg-primary-800 hover:text-white'
+                        }`
+                      }
+                    >
+                      {renderSidebarLabel(group.label, GroupIcon, isGroupActive, {
+                        trailing: <ChevronIcon className={`h-4 w-4 transition ${isGroupExpanded ? 'rotate-180' : ''}`} />,
                       })}
+                    </button>
+
+                    <div
+                      className={`overflow-hidden transition-all duration-200 ${isGroupExpanded ? 'max-h-[360px] opacity-100' : 'max-h-0 opacity-0'
+                        }`}
+                    >
+                      <div className="ml-3 space-y-1 pl-3 pt-1">
+                        {group.items.map((item) => {
+                          const isSubItemActive = activeManagementSection === item.key;
+                          const itemPath = buildManagementSectionPath(item.key);
+                          return (
+                            <NavLink
+                              key={item.key}
+                              to={itemPath}
+                              onClick={() => {
+                                setExpandedManagementGroup(group.key);
+                                setOpen(false);
+                              }}
+                              onMouseEnter={() => preloadRoute(itemPath)}
+                              onFocus={() => preloadRoute(itemPath)}
+                              className={() =>
+                                `group block rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] transition ${isSubItemActive
+                                  ? 'bg-primary-800 text-white'
+                                  : 'text-primary-200 hover:bg-primary-800 hover:text-white'
+                                }`
+                              }
+                            >
+                              {renderSidebarLabel(item.label, item.icon, isSubItemActive, { compact: true })}
+                            </NavLink>
+                          );
+                        })}
+                      </div>
                     </div>
                   </div>
-                </div>
-              ) : null}
+                );
+              })}
 
               {visibleAulaVirtualItems.length ? (
                 <div className="space-y-1">
@@ -477,24 +588,55 @@ export default function AppShell() {
                 </div>
               ) : null}
 
-              {resolvedItems.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  end={item.to === '/'}
-                  onClick={handlePrimaryNavClick}
-                  onMouseEnter={() => preloadRoute(item.to)}
-                  onFocus={() => preloadRoute(item.to)}
-                  className={({ isActive }) =>
-                    `group block rounded-xl px-3 py-2 text-sm font-medium transition ${isNavItemActive(item.to, isActive)
-                      ? 'bg-primary-500 text-white'
-                      : 'text-primary-100 hover:bg-primary-800 hover:text-white'
-                    }`
-                  }
-                >
-                  {({ isActive }) => renderSidebarLabel(item.label, item.icon, isNavItemActive(item.to, isActive))}
-                </NavLink>
-              ))}
+              {resolvedItems.length ? (
+                <div className="space-y-1">
+                  <button
+                    type="button"
+                    onClick={handleAdminClick}
+                    onMouseEnter={() => preloadRoute('/users')}
+                    onFocus={() => preloadRoute('/users')}
+                    className={
+                      `group block w-full rounded-xl px-3 py-2 text-left text-sm font-medium transition ${adminMenuActive
+                        ? 'bg-primary-500 text-white'
+                        : 'text-primary-100 hover:bg-primary-800 hover:text-white'
+                      }`
+                    }
+                  >
+                    {renderSidebarLabel('Administración', ShieldCheck, adminMenuActive, {
+                      trailing: <ChevronIcon className={`h-4 w-4 transition ${isAdminExpanded ? 'rotate-180' : ''}`} />,
+                    })}
+                  </button>
+
+                  <div
+                    className={`overflow-hidden transition-all duration-200 ${isAdminExpanded ? 'max-h-[220px] opacity-100' : 'max-h-0 opacity-0'
+                      }`}
+                  >
+                    <div className="ml-3 space-y-1 pl-3 pt-1">
+                      {resolvedItems.map((item) => (
+                        <NavLink
+                          key={item.to}
+                          to={item.to}
+                          end={item.to === '/'}
+                          onClick={() => {
+                            setIsAdminExpanded(true);
+                            setOpen(false);
+                          }}
+                          onMouseEnter={() => preloadRoute(item.to)}
+                          onFocus={() => preloadRoute(item.to)}
+                          className={({ isActive }) =>
+                            `group block rounded-lg px-3 py-2 text-xs font-semibold uppercase tracking-[0.08em] transition ${isNavItemActive(item.to, isActive)
+                              ? 'bg-primary-800 text-white'
+                              : 'text-primary-200 hover:bg-primary-800 hover:text-white'
+                            }`
+                          }
+                        >
+                          {({ isActive }) => renderSidebarLabel(item.label, item.icon, isNavItemActive(item.to, isActive), { compact: true })}
+                        </NavLink>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </>
           )}
         </nav>
@@ -503,7 +645,7 @@ export default function AppShell() {
           <button
             type="button"
             onClick={handleLogout}
-            className="w-full rounded-xl border border-primary-300 px-3 py-2 text-sm font-medium text-primary-50 transition hover:bg-primary-800"
+            className="w-full rounded-lg border border-primary-300 px-3 py-2 text-sm font-medium text-primary-50 transition hover:bg-primary-800"
           >
             <span className="flex items-center justify-center gap-2">
               <LogOut className="h-4 w-4" />
@@ -514,26 +656,22 @@ export default function AppShell() {
       </aside>
 
       <div className="min-h-screen min-w-0 lg:ml-0">
-        <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b border-primary-100 bg-white/90 px-4 py-3 backdrop-blur dark:border-white/10 dark:bg-slate-900/80">
+        <header className="sticky top-0 z-10 flex flex-wrap items-center justify-between gap-2 border-b border-slate-200 bg-white px-4 py-3 dark:border-white/10 dark:bg-slate-900">
           <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => setOpen((value) => !value)}
-              className="rounded-lg border border-primary-200 px-3 py-2 text-xs font-semibold uppercase tracking-wide lg:hidden dark:border-white/20 dark:text-white"
+              className="rounded-lg border border-slate-200 px-3 py-2 text-xs font-medium lg:hidden dark:border-white/20 dark:text-white"
             >
               <span className="flex items-center gap-2">
                 <Menu className="h-4 w-4" />
                 <span>Menú</span>
               </span>
             </button>
-            <h2 className="text-lg font-semibold text-primary-800 dark:text-white">Sistema de Gestión</h2>
+            <h2 className="text-lg font-semibold text-slate-800 dark:text-white">Sistema de Gestión</h2>
           </div>
 
-          <div className="flex items-center gap-4">
-            <span className="hidden rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-700 sm:inline-block">
-              Online
-            </span>
-          </div>
+          <div />
         </header>
 
         <main className={isCertificatesRoute ? 'w-full min-w-0 p-2 md:p-3' : 'mx-auto w-full max-w-7xl min-w-0 p-3 sm:p-4 md:p-6'}>

@@ -4,6 +4,7 @@ import {
   BriefcaseBusiness,
   Building2,
   CalendarRange,
+  CircleDollarSign,
   FileBadge,
   GraduationCap,
   History,
@@ -13,6 +14,18 @@ import {
 import { PERMISSIONS } from './permissions';
 
 export const MANAGEMENT_SECTION_ITEMS = [
+  {
+    key: 'cash_register',
+    label: 'Caja',
+    icon: CircleDollarSign,
+    permissions: [PERMISSIONS.CASH_REGISTER_VIEW, PERMISSIONS.CASH_REGISTER_MANAGE],
+  },
+  {
+    key: 'payments',
+    label: 'Pagos',
+    icon: Wallet,
+    permissions: [PERMISSIONS.PAYMENTS_VIEW, PERMISSIONS.PAYMENTS_MANAGE],
+  },
   {
     key: 'students',
     label: 'Matrícula',
@@ -54,12 +67,6 @@ export const MANAGEMENT_SECTION_ITEMS = [
     label: 'Periodos',
     icon: CalendarRange,
     permissions: [PERMISSIONS.PERIODS_VIEW, PERMISSIONS.PERIODS_MANAGE],
-  },
-  {
-    key: 'payments',
-    label: 'Pagos',
-    icon: Wallet,
-    permissions: [PERMISSIONS.PAYMENTS_VIEW, PERMISSIONS.PAYMENTS_MANAGE],
   },
   {
     key: 'certificates',

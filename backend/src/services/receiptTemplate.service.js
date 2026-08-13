@@ -242,6 +242,9 @@ const buildReceiptHtml = ({
   totalAmount = 0,
   aCuentaAmount = null,
   saldoAmount = null,
+  changeAmount = 0,
+  paymentReceivedLabel = 'A Cta',
+  paymentSummary = '',
   validationUrl = 'www.macroedunet.com',
   qrImageDataUrl = '',
   rucNumber = '20508338288',
@@ -254,11 +257,14 @@ const buildReceiptHtml = ({
   const totalNumeric = Number(totalAmount || 0);
   const aCuentaNumeric = aCuentaAmount === null ? totalNumeric : Number(aCuentaAmount || 0);
   const saldoNumeric = saldoAmount === null ? Math.max(totalNumeric - aCuentaNumeric, 0) : Number(saldoAmount || 0);
+  const changeNumeric = Number(changeAmount || 0);
   const dateParts = toDateParts(issueDate);
 
   const isCanceled = Math.abs(saldoNumeric) < 0.000001;
   const statusLabel = isCanceled ? 'CANCELADO' : 'PENDIENTE';
   const safeCustomerAddress = String(customerAddress || '').trim();
+  const safePaymentReceivedLabel = String(paymentReceivedLabel || 'A Cta');
+  const safePaymentSummary = String(paymentSummary || '').trim();
 
   const replacements = {
     DOCUMENT_TITLE: escapeHtml(documentMetadata.title),
@@ -286,8 +292,26 @@ const buildReceiptHtml = ({
     IGV: escapeHtml(toPlainAmount(0)),
     TOTAL_AMOUNT_PLAIN: escapeHtml(toPlainAmount(totalNumeric)),
     TOTAL_CURRENCY: escapeHtml(toCurrency(totalNumeric)),
+    PAYMENT_RECEIVED_LABEL: escapeHtml(safePaymentReceivedLabel),
     A_CUENTA_CURRENCY: escapeHtml(toCurrency(aCuentaNumeric)),
     SALDO_CURRENCY: escapeHtml(toCurrency(saldoNumeric)),
+    PAYMENT_SUMMARY_ROW_F1: safePaymentSummary
+      ? `<div class="payment-detail"><strong>Pago:</strong> ${escapeHtml(safePaymentSummary)}</div>`
+      : '',
+    PAYMENT_SUMMARY_ROW_F2: safePaymentSummary
+      ? `<div class="payment-detail"><strong>Pago:</strong> ${escapeHtml(safePaymentSummary)}</div>`
+      : '',
+    CHANGE_ROWS_F1:
+      changeNumeric > 0
+        ? `<div class="sum-row"><span>${escapeHtml(
+            safePaymentReceivedLabel.toUpperCase(),
+          )}</span><span>${escapeHtml(toPlainAmount(aCuentaNumeric))}</span></div>
+            <div class="sum-row"><span>VUELTO</span><span>${escapeHtml(toPlainAmount(changeNumeric))}</span></div>`
+        : '',
+    CHANGE_ROW_F2:
+      changeNumeric > 0
+        ? `<div class="summary-row"><span>Vuelto:</span><strong>${escapeHtml(toCurrency(changeNumeric))}</strong></div>`
+        : '',
     STATUS_LABEL: escapeHtml(statusLabel),
     AMOUNT_WORDS: escapeHtml(amountToWords(totalNumeric)),
     VALIDATION_URL: escapeHtml(validationUrl),

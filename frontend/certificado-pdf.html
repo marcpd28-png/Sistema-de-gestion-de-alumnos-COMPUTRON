@@ -831,9 +831,6 @@
     </div>
 
     <script type="module">
-      import html2canvas from "html2canvas";
-      import { jsPDF } from "jspdf";
-
       (() => {
         const queryParams = new URLSearchParams(window.location.search);
         const isEmbedded = queryParams.get("embed") === "1";
@@ -865,8 +862,23 @@
           draftStudentId: null,
           draftEnrollmentId: null
         };
+        let pdfLibrariesPromise = null;
         const AUTH_STORAGE_KEY = "computron_auth";
         const CERTIFICATE_DRAFT_STORAGE_PREFIX = "computron:certificate-generator-draft:";
+
+        const loadPdfLibraries = () => {
+          if (!pdfLibrariesPromise) {
+            pdfLibrariesPromise = Promise.all([
+              import("html2canvas"),
+              import("jspdf")
+            ]).then(([html2canvasModule, jspdfModule]) => ({
+              html2canvas: html2canvasModule.default,
+              jsPDF: jspdfModule.jsPDF
+            }));
+          }
+
+          return pdfLibrariesPromise;
+        };
 
         const defaults = {
           studentNameInput: "Nombre del alumno",
@@ -1126,6 +1138,8 @@
               qrCodeView.src ? waitForImage(qrCodeView) : Promise.resolve()
             ]);
             await waitForRenderFrame();
+
+            const { html2canvas, jsPDF } = await loadPdfLibraries();
 
             const canvas = await html2canvas(certificateSheet, {
               scale: Math.max(2, window.devicePixelRatio || 1),

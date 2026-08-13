@@ -13,6 +13,7 @@ const PAYMENT_METHOD_LABELS = {
   CANJE: 'Canje',
   EFECTIVO: 'Efectivo',
   OTRO: 'Otro',
+  MIXTO: 'Mixto',
 };
 
 export const CHART_COLORS = ['#1d4ed8', '#f97316', '#0f766e', '#dc2626', '#7c3aed', '#0891b2'];
@@ -57,6 +58,7 @@ export const createDashboardViewModel = ({ summary, hideIncome = false } = {}) =
   const recentPayments = summary?.recent_payments || [];
   const morosity = summary?.morosity || [];
   const chartSummary = summary?.charts || {};
+  const cashRegisterSummary = summary?.cash_register || {};
   const visibility = summary?.visibility || {};
 
   const rawStatusItems = chartSummary.payment_status || [];
@@ -98,12 +100,15 @@ export const createDashboardViewModel = ({ summary, hideIncome = false } = {}) =
     visibility,
     recentPayments,
     morosity,
+    cashRegister: {
+      today: cashRegisterSummary.today || {},
+      openSession: cashRegisterSummary.open_session || {},
+      recentTransactions: cashRegisterSummary.recent_transactions || [],
+    },
     paymentStatusChart,
     paymentMethodsChart,
     paymentsByDayChart: chartSummary.payments_by_day || [],
     morosityByCampusChart: chartSummary.morosity_by_campus || [],
-    latestPayment: recentPayments[0] || null,
-    topMorosityCampus: (chartSummary.morosity_by_campus || [])[0] || null,
     incomeValue: visibility.payments
       ? hideIncome
         ? '••••••'

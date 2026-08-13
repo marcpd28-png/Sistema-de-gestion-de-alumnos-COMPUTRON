@@ -4,8 +4,20 @@ import { getCampusScopeId, setCampusScopeId } from '../utils/campusScope';
 
 const AuthContext = createContext(null);
 
-const STORAGE_KEY = 'computron_auth';
-const emptyAuth = { accessToken: '', refreshToken: '', user: null };
+const emptyAuth = { accessToken: '', user: null };
+let bootstrapRefreshRequest = null;
+
+const refreshSessionForBootstrap = () => {
+  if (!bootstrapRefreshRequest) {
+    bootstrapRefreshRequest = api
+      .post('/auth/refresh', {}, { _skipAuthRefresh: true })
+      .finally(() => {
+        bootstrapRefreshRequest = null;
+      });
+  }
+
+  return bootstrapRefreshRequest;
+};
 
 const syncCampusScopeForUser = (user) => {
   const campusIds = Array.isArray(user?.campus_ids)
@@ -27,19 +39,8 @@ const syncCampusScopeForUser = (user) => {
   }
 };
 
-const readStorage = () => {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    return raw ? JSON.parse(raw) : null;
-  } catch {
-    return null;
-  }
-};
-
 export function AuthProvider({ children }) {
-  const stored = readStorage();
-
-  const [auth, setAuth] = useState(stored || { ...emptyAuth });
+  const [auth, setAuth] = useState({ ...emptyAuth });
   const authRef = useRef(auth);
 
   const [loading, setLoading] = useState(true);
@@ -47,21 +48,14 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     authRef.current = auth;
     setAuthToken(auth.accessToken);
-    if (auth.accessToken || auth.refreshToken || auth.user) {
-      localStorage.setItem(STORAGE_KEY, JSON.stringify(auth));
-    } else {
-      localStorage.removeItem(STORAGE_KEY);
-    }
   }, [auth]);
 
   useEffect(() => {
     configureAuthHandlers({
-      getRefreshToken: () => authRef.current.refreshToken,
-      onTokensUpdated: ({ accessToken, refreshToken }) => {
+      onTokensUpdated: ({ accessToken }) => {
         setAuth((prev) => ({
           ...prev,
           accessToken: accessToken || prev.accessToken,
-          refreshToken: refreshToken || prev.refreshToken,
         }));
       },
       onAuthFailure: () => {
@@ -75,39 +69,25 @@ export function AuthProvider({ children }) {
   useEffect(() => {
     let active = true;
     const bootstrap = async () => {
-      const currentAuth = authRef.current;
-      if (!currentAuth.accessToken && !currentAuth.refreshToken) {
-        if (active) setLoading(false);
-        return;
-      }
-
       try {
-        if (!currentAuth.accessToken && currentAuth.refreshToken) {
-          const refreshResponse = await api.post(
-            '/auth/refresh',
-            { refresh_token: currentAuth.refreshToken },
-            { _skipAuthRefresh: true },
-          );
+        const refreshResponse = await refreshSessionForBootstrap();
 
-          const refreshedAccessToken = refreshResponse.data?.access_token || '';
-          const refreshedRefreshToken = refreshResponse.data?.refresh_token || currentAuth.refreshToken;
+        const refreshedAccessToken = refreshResponse.data?.access_token || '';
 
-          if (!refreshedAccessToken) {
-            throw new Error('No se pudo refrescar la sesión');
-          }
-
-          setAuthToken(refreshedAccessToken);
-
-          if (active) {
-            setAuth((prev) => ({
-              ...prev,
-              accessToken: refreshedAccessToken,
-              refreshToken: refreshedRefreshToken,
-            }));
-          }
+        if (!refreshedAccessToken) {
+          throw new Error('No se pudo refrescar la sesión');
         }
 
-        const meResponse = await api.get('/auth/me');
+        setAuthToken(refreshedAccessToken);
+
+        if (active) {
+          setAuth((prev) => ({
+            ...prev,
+            accessToken: refreshedAccessToken,
+          }));
+        }
+
+        const meResponse = await api.get('/auth/me', { _skipResponseCache: true });
         if (active) {
           const nextUser = meResponse.data.user;
           setAuth((prev) => ({ ...prev, user: nextUser }));
@@ -140,7 +120,6 @@ export function AuthProvider({ children }) {
       });
       setAuth({
         accessToken: response.data.access_token,
-        refreshToken: response.data.refresh_token,
         user: response.data.user,
       });
       setAuthToken(response.data.access_token);
@@ -172,15 +151,19 @@ export function AuthProvider({ children }) {
     }
   };
 
+  const refreshUser = async () => {
+    const response = await api.get('/auth/me', { _skipResponseCache: true });
+    const nextUser = response.data?.user || null;
+    if (nextUser) {
+      setAuth((prev) => ({ ...prev, user: nextUser }));
+      syncCampusScopeForUser(nextUser);
+    }
+    return nextUser;
+  };
+
   const logout = async () => {
     try {
-      if (authRef.current.refreshToken) {
-        await api.post(
-          '/auth/logout',
-          { refresh_token: authRef.current.refreshToken },
-          { _skipAuthRefresh: true },
-        );
-      }
+      await api.post('/auth/logout', {}, { _skipAuthRefresh: true });
     } catch {
       // no-op
     } finally {
@@ -241,13 +224,13 @@ export function AuthProvider({ children }) {
     user: auth.user,
     permissions,
     accessToken: auth.accessToken,
-    refreshToken: auth.refreshToken,
     loading,
     isAuthenticated: Boolean(auth.accessToken && auth.user),
     mustChangePassword,
     hasPermission,
     hasAnyPermission,
     login,
+    refreshUser,
     changePassword,
     logout,
   };

@@ -71,6 +71,16 @@ const enrollmentReceiptSchema = z.object({
     .optional(),
 });
 
+const recentEnrollmentsSchema = z.object({
+  body: z.object({}).optional(),
+  params: z.object({}).optional(),
+  query: z
+    .object({
+      limit: z.coerce.number().int().min(1).max(50).optional(),
+    })
+    .optional(),
+});
+
 router.use(authenticate);
 
 router.get(
@@ -138,9 +148,10 @@ router.get(
 router.get(
   '/recent',
   authorizePermission('enrollments.view'),
+  validate(recentEnrollmentsSchema),
   asyncHandler(async (req, res) => {
     const campusScopeId = parseCampusScopeId(req);
-    const limit = Number(req.query.limit) || 10;
+    const limit = req.validated.query?.limit || 10;
     
     const { rows } = await query(
       `SELECT

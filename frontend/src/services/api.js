@@ -4,13 +4,13 @@ import { getCampusScopeId } from '../utils/campusScope';
 const api = axios.create({
   baseURL: '/api',
   timeout: 10000,
+  withCredentials: true,
 });
 
 const GET_CACHE_TTL_MS = 15000;
 const getResponseCache = new Map();
 
 let accessToken = '';
-let getRefreshToken = () => '';
 let handleTokensUpdated = () => {};
 let handleAuthFailure = () => {};
 let refreshPromise = null;
@@ -57,11 +57,9 @@ export const setAuthToken = (token) => {
 };
 
 export const configureAuthHandlers = ({
-  getRefreshToken: getRefreshTokenHandler,
   onTokensUpdated,
   onAuthFailure,
 } = {}) => {
-  getRefreshToken = typeof getRefreshTokenHandler === 'function' ? getRefreshTokenHandler : () => '';
   handleTokensUpdated = typeof onTokensUpdated === 'function' ? onTokensUpdated : () => {};
   handleAuthFailure = typeof onAuthFailure === 'function' ? onAuthFailure : () => {};
 };
@@ -127,20 +125,13 @@ api.interceptors.request.use((config) => {
 });
 
 const refreshAccessToken = async () => {
-  const refreshToken = getRefreshToken();
-
-  if (!refreshToken) {
-    throw new Error('No refresh token available');
-  }
-
   const response = await api.post(
     '/auth/refresh',
-    { refresh_token: refreshToken },
+    {},
     { _skipAuthRefresh: true },
   );
 
   const newAccessToken = response.data?.access_token || '';
-  const newRefreshToken = response.data?.refresh_token || refreshToken;
 
   if (!newAccessToken) {
     throw new Error('Refresh token response missing access token');
@@ -149,7 +140,6 @@ const refreshAccessToken = async () => {
   setAuthToken(newAccessToken);
   handleTokensUpdated({
     accessToken: newAccessToken,
-    refreshToken: newRefreshToken,
   });
 
   return newAccessToken;

@@ -53,6 +53,8 @@ VALUES
   ('payments.view', 'PAYMENTS', 'Ver pagos', 'Permite consultar el historial de pagos.'),
   ('payments.manage', 'PAYMENTS', 'Gestionar pagos', 'Permite registrar pagos y cambiar su estado.'),
   ('payments.audit.view', 'PAYMENTS', 'Ver auditoria de pagos', 'Permite consultar auditoria de cambios de pagos.'),
+  ('cash_register.view', 'CASH_REGISTER', 'Ver caja', 'Permite consultar sesiones, servicios y movimientos de caja.'),
+  ('cash_register.manage', 'CASH_REGISTER', 'Gestionar caja', 'Permite abrir, cerrar caja y registrar operaciones de servicios.'),
   ('reports.view', 'REPORTS', 'Ver reportes', 'Permite consultar reportes academicos y financieros.'),
   ('notifications.view', 'NOTIFICATIONS', 'Ver notificaciones', 'Permite consultar historial de notificaciones.'),
   ('notifications.manage', 'NOTIFICATIONS', 'Gestionar notificaciones', 'Permite ejecutar procesos de recordatorios por correo.')
@@ -110,6 +112,8 @@ JOIN permissions p
     'payments.view',
     'payments.manage',
     'payments.audit.view',
+    'cash_register.view',
+    'cash_register.manage',
     'reports.view',
     'notifications.view',
     'notifications.manage'
@@ -148,6 +152,8 @@ JOIN permissions p
     'payments.view',
     'payments.manage',
     'payments.audit.view',
+    'cash_register.view',
+    'cash_register.manage',
     'reports.view',
     'notifications.view',
     'notifications.manage'
@@ -689,7 +695,7 @@ CREATE TABLE IF NOT EXISTS payments (
   amount_received NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (amount_received >= 0),
   overpayment_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (overpayment_amount >= 0),
   payment_date TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-  method VARCHAR(30) NOT NULL CHECK (method IN ('YAPE', 'PLIN', 'TRANSFERENCIA', 'QR', 'TARJETA', 'CANJE', 'EFECTIVO', 'OTRO')),
+  method VARCHAR(30) NOT NULL CHECK (method IN ('YAPE', 'PLIN', 'TRANSFERENCIA', 'QR', 'TARJETA', 'CANJE', 'EFECTIVO', 'OTRO', 'MIXTO')),
   reference_code VARCHAR(120),
   status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED' CHECK (status IN ('PENDING', 'COMPLETED', 'REJECTED')),
   processed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
@@ -736,6 +742,130 @@ CREATE TABLE IF NOT EXISTS receipt_snapshots (
   receipt_token TEXT NOT NULL,
   receipt_token_hash VARCHAR(64) NOT NULL UNIQUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS cash_service_items (
+  id BIGSERIAL PRIMARY KEY,
+  name VARCHAR(140) UNIQUE NOT NULL,
+  description VARCHAR(240),
+  default_price NUMERIC(10,2) NOT NULL CHECK (default_price >= 0),
+  is_active BOOLEAN NOT NULL DEFAULT TRUE,
+  sort_order INTEGER NOT NULL DEFAULT 0,
+  created_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO cash_service_items (name, description, default_price, sort_order)
+VALUES
+  ('CERTIFICADO DE ESTUDIOS OFICIAL POR CICLO', 'Servicio administrativo', 52.00, 10),
+  ('CERTIFICADO POR CURSO', 'Servicio administrativo', 40.00, 20),
+  ('CERTIFICACION PROGRESIVA CARRERA', 'Servicio administrativo', 22.00, 30),
+  ('CERTIFICADOS DE ESTUDIOS CETPRO', 'Servicio administrativo', 82.00, 40),
+  ('CONSTANCIA DE ESTUDIOS', 'Servicio administrativo', 27.00, 50),
+  ('CONSTANCIA DE MATRICULA', 'Servicio administrativo', 27.00, 60),
+  ('CONSTANCIA DE NO ADEUDO', 'Servicio administrativo', 17.00, 70),
+  ('CAMBIO DE TURNO', 'Servicio administrativo', 12.00, 80),
+  ('CAMBIO DE CARRERA', 'Servicio administrativo', 12.00, 90),
+  ('CAMBIO DE LOCAL', 'Servicio administrativo', 12.00, 100),
+  ('CARNET DE MEDIO PASAJE', 'Servicio administrativo', 20.00, 110),
+  ('CONVALIDACION', 'Servicio administrativo', 22.00, 120)
+ON CONFLICT (name) DO NOTHING;
+
+CREATE TABLE IF NOT EXISTS cash_register_sessions (
+  id BIGSERIAL PRIMARY KEY,
+  campus_id BIGINT NOT NULL REFERENCES campuses(id) ON DELETE RESTRICT,
+  opening_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (opening_amount >= 0),
+  opened_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  opened_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  closing_amount NUMERIC(10,2) CHECK (closing_amount IS NULL OR closing_amount >= 0),
+  expected_cash_amount NUMERIC(10,2),
+  difference_amount NUMERIC(10,2),
+  closed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  closed_at TIMESTAMPTZ,
+  status VARCHAR(20) NOT NULL DEFAULT 'OPEN' CHECK (status IN ('OPEN', 'CLOSED')),
+  notes VARCHAR(400),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS cash_transactions (
+  id BIGSERIAL PRIMARY KEY,
+  session_id BIGINT NOT NULL REFERENCES cash_register_sessions(id) ON DELETE RESTRICT,
+  campus_id BIGINT NOT NULL REFERENCES campuses(id) ON DELETE RESTRICT,
+  student_id BIGINT REFERENCES students(id) ON DELETE SET NULL,
+  customer_name VARCHAR(180) NOT NULL,
+  customer_document VARCHAR(20),
+  customer_address VARCHAR(240),
+  total_amount NUMERIC(10,2) NOT NULL CHECK (total_amount >= 0),
+  amount_received NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (amount_received >= 0),
+  change_amount NUMERIC(10,2) NOT NULL DEFAULT 0 CHECK (change_amount >= 0),
+  method VARCHAR(30) NOT NULL CHECK (method IN ('YAPE', 'PLIN', 'TRANSFERENCIA', 'QR', 'TARJETA', 'CANJE', 'EFECTIVO', 'OTRO', 'MIXTO')),
+  reference_code VARCHAR(120),
+  status VARCHAR(20) NOT NULL DEFAULT 'COMPLETED' CHECK (status IN ('COMPLETED', 'VOIDED')),
+  receipt_document_type VARCHAR(30) NOT NULL DEFAULT 'BOLETA'
+    CHECK (receipt_document_type IN ('BOLETA', 'FACTURA', 'RECIBO_INTERNO')),
+  billing_name VARCHAR(180),
+  billing_document VARCHAR(20),
+  billing_address VARCHAR(240),
+  receipt_token TEXT NOT NULL,
+  receipt_token_hash VARCHAR(64) NOT NULL UNIQUE,
+  notes VARCHAR(400),
+  processed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS cash_transaction_items (
+  id BIGSERIAL PRIMARY KEY,
+  transaction_id BIGINT NOT NULL REFERENCES cash_transactions(id) ON DELETE CASCADE,
+  service_item_id BIGINT REFERENCES cash_service_items(id) ON DELETE SET NULL,
+  description VARCHAR(180) NOT NULL,
+  quantity INTEGER NOT NULL DEFAULT 1 CHECK (quantity > 0),
+  unit_price NUMERIC(10,2) NOT NULL CHECK (unit_price >= 0),
+  total_amount NUMERIC(10,2) NOT NULL CHECK (total_amount >= 0),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS cash_transaction_payments (
+  id BIGSERIAL PRIMARY KEY,
+  transaction_id BIGINT NOT NULL REFERENCES cash_transactions(id) ON DELETE CASCADE,
+  method VARCHAR(30) NOT NULL CHECK (method IN ('YAPE', 'PLIN', 'TRANSFERENCIA', 'QR', 'TARJETA', 'CANJE', 'EFECTIVO', 'OTRO')),
+  amount NUMERIC(10,2) NOT NULL CHECK (amount > 0),
+  reference_code VARCHAR(120),
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE TABLE IF NOT EXISTS cash_transaction_audit (
+  id BIGSERIAL PRIMARY KEY,
+  transaction_id BIGINT NOT NULL REFERENCES cash_transactions(id) ON DELETE CASCADE,
+  old_status VARCHAR(20),
+  new_status VARCHAR(20) NOT NULL,
+  changed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  changed_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  notes VARCHAR(400)
+);
+
+CREATE TABLE IF NOT EXISTS electronic_document_submissions (
+  id BIGSERIAL PRIMARY KEY,
+  source_type VARCHAR(40) NOT NULL CHECK (source_type IN ('CASH_TRANSACTION', 'PAYMENT')),
+  source_id BIGINT NOT NULL,
+  receipt_document_type VARCHAR(30) NOT NULL CHECK (receipt_document_type IN ('BOLETA', 'FACTURA')),
+  sunat_document_type VARCHAR(2) NOT NULL CHECK (sunat_document_type IN ('01', '03')),
+  sunat_api_document_id VARCHAR(80),
+  sunat_series VARCHAR(8),
+  sunat_document_number VARCHAR(40),
+  sunat_status VARCHAR(40) NOT NULL DEFAULT 'PENDIENTE',
+  sunat_message TEXT,
+  sunat_error_code VARCHAR(80),
+  request_payload JSONB,
+  create_response JSONB,
+  send_response JSONB,
+  submitted_by BIGINT REFERENCES users(id) ON DELETE SET NULL,
+  submitted_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+  UNIQUE (source_type, source_id)
 );
 
 CREATE TABLE IF NOT EXISTS refresh_tokens (
@@ -874,6 +1004,30 @@ CREATE INDEX IF NOT EXISTS idx_payment_details_installment_id ON payment_details
 CREATE INDEX IF NOT EXISTS idx_payment_audit_payment_date ON payment_audit(payment_id, changed_at);
 CREATE UNIQUE INDEX IF NOT EXISTS ux_receipt_snapshots_token_hash ON receipt_snapshots(receipt_token_hash);
 CREATE INDEX IF NOT EXISTS idx_receipt_snapshots_created_at ON receipt_snapshots(created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cash_service_items_active_sort
+  ON cash_service_items(is_active, sort_order, name);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_register_sessions_open_campus
+  ON cash_register_sessions(campus_id)
+  WHERE status = 'OPEN';
+CREATE INDEX IF NOT EXISTS idx_cash_register_sessions_campus_opened
+  ON cash_register_sessions(campus_id, opened_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cash_transactions_session_id ON cash_transactions(session_id);
+CREATE INDEX IF NOT EXISTS idx_cash_transactions_campus_created
+  ON cash_transactions(campus_id, created_at DESC);
+CREATE INDEX IF NOT EXISTS idx_cash_transactions_status_method
+  ON cash_transactions(status, method);
+CREATE UNIQUE INDEX IF NOT EXISTS ux_cash_transactions_receipt_token_hash
+  ON cash_transactions(receipt_token_hash);
+CREATE INDEX IF NOT EXISTS idx_cash_transaction_items_transaction_id
+  ON cash_transaction_items(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_cash_transaction_payments_transaction_id
+  ON cash_transaction_payments(transaction_id);
+CREATE INDEX IF NOT EXISTS idx_cash_transaction_audit_transaction_date
+  ON cash_transaction_audit(transaction_id, changed_at DESC);
+CREATE INDEX IF NOT EXISTS idx_electronic_document_submissions_source
+  ON electronic_document_submissions(source_type, source_id);
+CREATE INDEX IF NOT EXISTS idx_electronic_document_submissions_status
+  ON electronic_document_submissions(sunat_status, created_at DESC);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_user_id ON refresh_tokens(user_id);
 CREATE INDEX IF NOT EXISTS idx_refresh_tokens_expires_at ON refresh_tokens(expires_at);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_refresh_tokens_token_hash ON refresh_tokens(token_hash);

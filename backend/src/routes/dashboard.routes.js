@@ -25,12 +25,22 @@ router.get(
   ),
   asyncHandler(async (req, res) => {
     const campusScopeId = parseCampusScopeId(req);
-    const [canViewStudents, canViewCourses, canViewPayments, canViewReports] = await Promise.all([
+    const [
+      canViewStudents,
+      canViewCourses,
+      canViewPayments,
+      canViewReports,
+      canViewCashRegister,
+      canManageCashRegister,
+    ] = await Promise.all([
       userHasPermission(req.user.id, 'students.view'),
       userHasPermission(req.user.id, 'courses.view'),
       userHasPermission(req.user.id, 'payments.view'),
       userHasPermission(req.user.id, 'reports.view'),
+      userHasPermission(req.user.id, 'cash_register.view'),
+      userHasPermission(req.user.id, 'cash_register.manage'),
     ]);
+    const canAccessCashRegister = canViewCashRegister || canManageCashRegister;
 
     const summary = {
       totals: {
@@ -38,6 +48,26 @@ router.get(
         courses: 0,
         payments: 0,
         income: '0.00',
+      },
+      cash_register: {
+        today: {
+          completed_count: 0,
+          voided_count: 0,
+          total_completed: '0.00',
+          total_voided: '0.00',
+          cash_received: '0.00',
+          cash_net: '0.00',
+          digital_received: '0.00',
+          change_given: '0.00',
+        },
+        open_session: {
+          open_count: 0,
+          first_session_id: null,
+          opening_amount: '0.00',
+          expected_cash_amount: '0.00',
+          opened_at: null,
+        },
+        recent_transactions: [],
       },
       recent_payments: [],
       morosity: [],
@@ -52,6 +82,7 @@ router.get(
         courses: canViewCourses,
         payments: canViewPayments,
         reports: canViewReports,
+        cash_register: canAccessCashRegister,
       },
     };
 
@@ -193,6 +224,155 @@ router.get(
           [campusScopeId, DASHBOARD_TREND_DAYS],
         ).then((result) => {
           summary.charts.payments_by_day = result.rows;
+        }),
+      );
+    }
+
+    if (canAccessCashRegister) {
+      tasks.push(
+        query(
+          `WITH filtered_transactions AS (
+             SELECT ct.*
+             FROM cash_transactions ct
+             WHERE ($1::bigint IS NULL OR ct.campus_id = $1)
+               AND ct.created_at::date = CURRENT_DATE
+           ),
+           payment_summary AS (
+             SELECT
+               ctp.transaction_id,
+               COUNT(*)::int AS payment_count,
+               COALESCE(SUM(ctp.amount) FILTER (WHERE ctp.method = 'EFECTIVO'), 0)::numeric(12,2)
+                 AS cash_received,
+               COALESCE(SUM(ctp.amount) FILTER (WHERE ctp.method <> 'EFECTIVO'), 0)::numeric(12,2)
+                 AS digital_received
+             FROM cash_transaction_payments ctp
+             JOIN filtered_transactions ft ON ft.id = ctp.transaction_id
+             GROUP BY ctp.transaction_id
+           )
+           SELECT
+             COUNT(*) FILTER (WHERE ft.status = 'COMPLETED')::int AS completed_count,
+             COUNT(*) FILTER (WHERE ft.status = 'VOIDED')::int AS voided_count,
+             COALESCE(SUM(ft.total_amount) FILTER (WHERE ft.status = 'COMPLETED'), 0)::numeric(12,2)
+               AS total_completed,
+             COALESCE(SUM(ft.total_amount) FILTER (WHERE ft.status = 'VOIDED'), 0)::numeric(12,2)
+               AS total_voided,
+             COALESCE(SUM(
+               CASE
+                 WHEN ft.status <> 'COMPLETED' THEN 0
+                 WHEN COALESCE(ps.payment_count, 0) > 0 THEN COALESCE(ps.cash_received, 0)
+                 WHEN ft.method = 'EFECTIVO' THEN ft.amount_received
+                 ELSE 0
+               END
+             ), 0)::numeric(12,2) AS cash_received,
+             COALESCE(SUM(
+               CASE
+                 WHEN ft.status <> 'COMPLETED' THEN 0
+                 WHEN COALESCE(ps.payment_count, 0) > 0
+                   THEN GREATEST(COALESCE(ps.cash_received, 0) - COALESCE(ft.change_amount, 0), 0)
+                 WHEN ft.method = 'EFECTIVO' THEN GREATEST(ft.amount_received - COALESCE(ft.change_amount, 0), 0)
+                 ELSE 0
+               END
+             ), 0)::numeric(12,2) AS cash_net,
+             COALESCE(SUM(
+               CASE
+                 WHEN ft.status <> 'COMPLETED' THEN 0
+                 WHEN COALESCE(ps.payment_count, 0) > 0 THEN COALESCE(ps.digital_received, 0)
+                 WHEN ft.method <> 'EFECTIVO' THEN ft.total_amount
+                 ELSE 0
+               END
+             ), 0)::numeric(12,2) AS digital_received,
+             COALESCE(SUM(ft.change_amount) FILTER (WHERE ft.status = 'COMPLETED'), 0)::numeric(12,2)
+               AS change_given
+           FROM filtered_transactions ft
+           LEFT JOIN payment_summary ps ON ps.transaction_id = ft.id`,
+          [campusScopeId],
+        ).then((result) => {
+          summary.cash_register.today = {
+            ...summary.cash_register.today,
+            ...(result.rows[0] || {}),
+          };
+        }),
+      );
+
+      tasks.push(
+        query(
+          `WITH open_sessions AS (
+             SELECT crs.*
+             FROM cash_register_sessions crs
+             WHERE crs.status = 'OPEN'
+               AND ($1::bigint IS NULL OR crs.campus_id = $1)
+           ),
+           payment_summary AS (
+             SELECT
+               ctp.transaction_id,
+               COUNT(*)::int AS payment_count,
+               COALESCE(SUM(ctp.amount) FILTER (WHERE ctp.method = 'EFECTIVO'), 0)::numeric(12,2)
+                 AS cash_received
+             FROM cash_transaction_payments ctp
+             JOIN cash_transactions ct ON ct.id = ctp.transaction_id
+             JOIN open_sessions os ON os.id = ct.session_id
+             GROUP BY ctp.transaction_id
+           ),
+           session_cash AS (
+             SELECT
+               os.id AS session_id,
+               os.opening_amount,
+               os.opened_at,
+               COALESCE(SUM(
+                 CASE
+                   WHEN ct.status <> 'COMPLETED' THEN 0
+                   WHEN COALESCE(ps.payment_count, 0) > 0
+                     THEN GREATEST(COALESCE(ps.cash_received, 0) - COALESCE(ct.change_amount, 0), 0)
+                   WHEN ct.method = 'EFECTIVO' THEN GREATEST(ct.amount_received - COALESCE(ct.change_amount, 0), 0)
+                   ELSE 0
+                 END
+               ), 0)::numeric(12,2) AS cash_net
+             FROM open_sessions os
+             LEFT JOIN cash_transactions ct ON ct.session_id = os.id
+             LEFT JOIN payment_summary ps ON ps.transaction_id = ct.id
+             GROUP BY os.id, os.opening_amount, os.opened_at
+           )
+           SELECT
+             COUNT(*)::int AS open_count,
+             MIN(session_id) AS first_session_id,
+             MIN(opened_at) AS opened_at,
+             COALESCE(SUM(opening_amount), 0)::numeric(12,2) AS opening_amount,
+             COALESCE(SUM(opening_amount + cash_net), 0)::numeric(12,2) AS expected_cash_amount
+           FROM session_cash`,
+          [campusScopeId],
+        ).then((result) => {
+          summary.cash_register.open_session = {
+            ...summary.cash_register.open_session,
+            ...(result.rows[0] || {}),
+          };
+        }),
+      );
+
+      tasks.push(
+        query(
+          `SELECT
+             ct.id,
+             ct.customer_name,
+             ct.total_amount,
+             ct.method,
+             ct.status,
+             ct.created_at,
+             (
+               SELECT STRING_AGG(
+                 CONCAT(p.method, ': S/ ', TO_CHAR(p.amount, 'FM999999990.00')),
+                 ' + '
+                 ORDER BY p.id
+               )
+               FROM cash_transaction_payments p
+               WHERE p.transaction_id = ct.id
+             ) AS payment_summary
+           FROM cash_transactions ct
+           WHERE ($1::bigint IS NULL OR ct.campus_id = $1)
+           ORDER BY ct.created_at DESC, ct.id DESC
+           LIMIT 5`,
+          [campusScopeId],
+        ).then((result) => {
+          summary.cash_register.recent_transactions = result.rows;
         }),
       );
     }

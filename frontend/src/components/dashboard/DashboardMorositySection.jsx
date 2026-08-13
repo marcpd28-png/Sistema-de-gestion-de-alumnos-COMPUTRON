@@ -4,13 +4,12 @@ import { formatCurrency, formatShortDate } from './dashboardUtils';
 export default function DashboardMorositySection({ visibility, morosityByCampusChart, morosity, loading }) {
   return (
     <>
-      <RankingBarsCard items={visibility.reports ? morosityByCampusChart : []} />
+      <RankingBarsCard items={visibility.reports ? morosityByCampusChart : []} subtitle="" />
 
       <article className="card">
         <div className="flex flex-wrap items-center justify-between gap-2">
           <div>
             <h2 className="text-lg font-semibold text-primary-900">Cuotas vencidas</h2>
-            <p className="text-sm text-primary-700">Detalle puntual de alumnos con deuda vencida.</p>
           </div>
           <span className="rounded-full bg-accent-100 px-3 py-1 text-xs font-semibold text-accent-800">
             {morosity.length} registro(s)

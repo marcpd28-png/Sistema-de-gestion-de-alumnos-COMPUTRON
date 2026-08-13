@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import api from '../services/api';
+import { openSecureFile } from '../utils/secureFiles';
 
 const ACCEPTED_RESOURCE_TYPES =
   '.pdf,.doc,.docx,.xls,.xlsx,.ppt,.pptx,.txt,.zip,.jpg,.jpeg,.png,.webp';
@@ -43,6 +44,7 @@ export default function CourseResourcesPanel({
   const [loading, setLoading] = useState(false);
   const [uploading, setUploading] = useState(false);
   const [deletingId, setDeletingId] = useState(null);
+  const [openingId, setOpeningId] = useState(null);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [uploadForm, setUploadForm] = useState(createUploadDefaults);
@@ -123,6 +125,24 @@ export default function CourseResourcesPanel({
       setError(requestError.response?.data?.message || 'No se pudo eliminar el archivo.');
     } finally {
       setDeletingId(null);
+    }
+  };
+
+  const handleOpenResource = async (resource, { download = false } = {}) => {
+    if (!assignmentId || !resource?.id) return;
+
+    setOpeningId(`${resource.id}:${download ? 'download' : 'view'}`);
+    setError('');
+    try {
+      await openSecureFile({
+        url: `/course-library/assignments/${assignmentId}/resources/${resource.id}/file`,
+        filename: resource.file_name || resource.title || 'archivo',
+        download,
+      });
+    } catch (requestError) {
+      setError(requestError.response?.data?.message || 'No se pudo abrir el archivo.');
+    } finally {
+      setOpeningId(null);
     }
   };
 
@@ -241,23 +261,22 @@ export default function CourseResourcesPanel({
               </div>
 
               <div className="mt-4 flex flex-wrap gap-2">
-                <a
-                  href={resource.file_url}
-                  target="_blank"
-                  rel="noreferrer"
+                <button
+                  type="button"
+                  onClick={() => handleOpenResource(resource)}
+                  disabled={openingId === `${resource.id}:view`}
                   className="rounded-lg bg-primary-700 px-3 py-2 text-xs font-semibold text-white hover:bg-primary-800"
                 >
-                  Ver archivo
-                </a>
-                <a
-                  href={resource.file_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  download={resource.file_name || undefined}
+                  {openingId === `${resource.id}:view` ? 'Abriendo...' : 'Ver archivo'}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleOpenResource(resource, { download: true })}
+                  disabled={openingId === `${resource.id}:download`}
                   className="rounded-lg border border-primary-300 bg-white px-3 py-2 text-xs font-semibold text-primary-800 hover:bg-primary-50"
                 >
-                  Descargar
-                </a>
+                  {openingId === `${resource.id}:download` ? 'Descargando...' : 'Descargar'}
+                </button>
                 {canDelete ? (
                   <button
                     type="button"

@@ -70,7 +70,7 @@ export default function DashboardPaymentsSection({
       <div className="grid gap-4 xl:grid-cols-3">
         <InteractiveDonutCard
           title="Estados de pago"
-          subtitle="Distribucion operativa de transacciones registradas."
+          subtitle=""
           items={visibility.payments ? paymentStatusChart : []}
           emptyMessage={visibility.payments ? 'No hay pagos para mostrar.' : 'Sin permiso para ver pagos.'}
           totalFormatter={(value) => `${value}`}
@@ -79,14 +79,14 @@ export default function DashboardPaymentsSection({
         />
         <InteractiveDonutCard
           title="Metodos de cobro"
-          subtitle="Participacion por monto acumulado en los distintos canales."
+          subtitle=""
           items={visibility.payments ? paymentMethodsChart : []}
           emptyMessage={visibility.payments ? 'No hay metodos para mostrar.' : 'Sin permiso para ver pagos.'}
           totalFormatter={(value) => formatCurrency(value)}
           activeValueFormatter={(value) => formatCurrency(value)}
           activeDetailFormatter={(item) => item?.detail || ''}
         />
-        <PaymentsTrendCard items={visibility.payments ? paymentsByDayChart : []} />
+        <PaymentsTrendCard items={visibility.payments ? paymentsByDayChart : []} subtitle="" />
       </div>
 
       <RecentPaymentsPanel items={recentPayments} loading={loading} />

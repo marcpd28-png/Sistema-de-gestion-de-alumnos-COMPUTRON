@@ -1,8 +1,9 @@
+import { ArrowUpRight } from 'lucide-react';
 import StatCard from '../StatCard';
 import InteractiveDonutCard from './InteractiveDonutCard';
 import PaymentsTrendCard from './PaymentsTrendCard';
 import RankingBarsCard from './RankingBarsCard';
-import { formatCurrency } from './dashboardUtils';
+import { formatCurrency, toPaymentMethodLabel } from './dashboardUtils';
 
 const EyeToggleIcon = ({ hidden }) => (
   <svg viewBox="0 0 24 24" className="h-4 w-4" fill="none" stroke="currentColor" strokeWidth="2">
@@ -28,19 +29,33 @@ export default function DashboardOverviewSection({
   incomeValue,
   incomeHint,
   hideIncome,
-  selectedCampusName,
-  latestPayment,
-  topMorosityCampus,
+  cashRegister,
   paymentMethodsChart,
   paymentStatusChart,
   paymentsByDayChart,
   morosityByCampusChart,
   onToggleIncome,
   onOpenSection,
+  onOpenCashRegister,
 }) {
+  const cashToday = cashRegister?.today || {};
+  const cashOpenSession = cashRegister?.openSession || {};
+  const recentCashTransactions = cashRegister?.recentTransactions || [];
+  const cashOpenCount = Number(cashOpenSession.open_count || 0);
+  const hasOpenCash = cashOpenCount > 0;
+  const visibleCurrency = (value) => (hideIncome ? '••••••' : formatCurrency(value));
+  const cashOpenedDate = cashOpenSession.opened_at
+    ? new Date(cashOpenSession.opened_at).toLocaleString('es-PE', {
+        day: '2-digit',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+      })
+    : null;
+
   return (
     <>
-      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+      <div className={`grid gap-4 md:grid-cols-2 ${visibility.cash_register ? 'xl:grid-cols-5' : 'xl:grid-cols-4'}`}>
         <StatCard
           title="Alumnos"
           value={visibility.students ? Number(totals.students || 0) : '-'}
@@ -76,15 +91,139 @@ export default function DashboardOverviewSection({
             ) : null
           }
         />
+        {visibility.cash_register ? (
+          <StatCard
+            title="Caja hoy"
+            value={visibleCurrency(cashToday.total_completed)}
+            hint={`${Number(cashToday.completed_count || 0)} operacion(es) de servicios`}
+            tone="accent"
+            action={
+              <button
+                type="button"
+                onClick={onOpenCashRegister}
+                className="rounded-lg border border-accent-200 p-1 text-accent-800 hover:bg-accent-50"
+                title="Abrir flujo de caja"
+                aria-label="Abrir flujo de caja"
+              >
+                <ArrowUpRight className="h-4 w-4" />
+              </button>
+            }
+          />
+        ) : null}
       </div>
+
+      {visibility.cash_register ? (
+        <section className="card overflow-hidden border-emerald-200 p-0">
+          <div className="flex flex-wrap items-start justify-between gap-3 border-b border-emerald-100 bg-emerald-50/70 px-5 py-4">
+            <div>
+              <h2 className="text-lg font-semibold text-primary-900">Flujo de caja</h2>
+            </div>
+            <div className="flex flex-wrap items-center gap-2">
+              <span
+                className={`rounded-full px-3 py-1 text-xs font-semibold ${
+                  hasOpenCash ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                }`}
+              >
+                {hasOpenCash
+                  ? `${cashOpenCount} caja${cashOpenCount === 1 ? '' : 's'} abierta${cashOpenCount === 1 ? '' : 's'}`
+                  : 'Caja cerrada'}
+              </span>
+              <button
+                type="button"
+                onClick={onOpenCashRegister}
+                className="inline-flex items-center gap-2 rounded-xl bg-emerald-700 px-3 py-2 text-sm font-semibold text-white transition hover:bg-emerald-800"
+              >
+                Ir a caja
+                <ArrowUpRight className="h-4 w-4" />
+              </button>
+            </div>
+          </div>
+
+          <div className="grid divide-y divide-primary-100 md:grid-cols-4 md:divide-x md:divide-y-0">
+            <div className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-500">Entró hoy</p>
+              <p className="mt-2 text-2xl font-semibold text-primary-900">
+                {visibleCurrency(cashToday.total_completed)}
+              </p>
+              <p className="text-sm text-primary-700">{Number(cashToday.completed_count || 0)} operaciones</p>
+            </div>
+            <div className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-500">Salió</p>
+              <p className="mt-2 text-2xl font-semibold text-primary-900">
+                {visibleCurrency(cashToday.change_given)}
+              </p>
+              <p className="text-sm text-primary-700">Vuelto entregado</p>
+            </div>
+            <div className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-500">Efectivo caja</p>
+              <p className="mt-2 text-2xl font-semibold text-primary-900">
+                {visibleCurrency(cashOpenSession.expected_cash_amount)}
+              </p>
+              <p className="text-sm text-primary-700">
+                {hasOpenCash
+                  ? `Apertura ${visibleCurrency(cashOpenSession.opening_amount)}${cashOpenedDate ? ` · ${cashOpenedDate}` : ''}`
+                  : 'Sin caja abierta'}
+              </p>
+            </div>
+            <div className="p-4">
+              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-500">Digital/otros</p>
+              <p className="mt-2 text-2xl font-semibold text-primary-900">
+                {visibleCurrency(cashToday.digital_received)}
+              </p>
+              <p className="text-sm text-primary-700">
+                Efectivo neto: {visibleCurrency(cashToday.cash_net)}
+              </p>
+            </div>
+          </div>
+
+          <div className="grid border-t border-primary-100 lg:grid-cols-[minmax(0,1fr)_minmax(280px,0.8fr)]">
+            <div className="p-4">
+              <p className="text-sm font-semibold text-primary-900">Control del día</p>
+              <div className="mt-3 grid gap-3 text-sm sm:grid-cols-3">
+                <div>
+                  <p className="text-primary-500">Efectivo recibido</p>
+                  <p className="font-semibold text-primary-900">{visibleCurrency(cashToday.cash_received)}</p>
+                </div>
+                <div>
+                  <p className="text-primary-500">Anulado</p>
+                  <p className="font-semibold text-primary-900">{visibleCurrency(cashToday.total_voided)}</p>
+                </div>
+                <div>
+                  <p className="text-primary-500">Operaciones anuladas</p>
+                  <p className="font-semibold text-primary-900">{Number(cashToday.voided_count || 0)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="border-t border-primary-100 p-4 lg:border-l lg:border-t-0">
+              <p className="text-sm font-semibold text-primary-900">Últimos movimientos</p>
+              <div className="mt-2 divide-y divide-primary-100">
+                {recentCashTransactions.slice(0, 3).map((transaction) => (
+                  <div key={transaction.id} className="flex items-center justify-between gap-3 py-2 text-sm">
+                    <div className="min-w-0">
+                      <p className="truncate font-medium text-primary-900">{transaction.customer_name || 'Cliente'}</p>
+                      <p className="text-xs text-primary-600">
+                        {toPaymentMethodLabel(transaction.method)} · #{transaction.id}
+                      </p>
+                    </div>
+                    <span className="shrink-0 font-semibold text-primary-900">
+                      {visibleCurrency(transaction.total_amount)}
+                    </span>
+                  </div>
+                ))}
+                {!recentCashTransactions.length ? (
+                  <p className="py-2 text-sm text-primary-600">Sin movimientos de caja recientes.</p>
+                ) : null}
+              </div>
+            </div>
+          </div>
+        </section>
+      ) : null}
 
       <section className="space-y-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h2 className="text-lg font-semibold text-primary-900">Panorama visual</h2>
-            <p className="text-sm text-primary-700">
-              Los indicadores clave vuelven a estar visibles desde el resumen principal.
-            </p>
           </div>
           <div className="flex flex-wrap gap-2">
             <button
@@ -108,13 +247,13 @@ export default function DashboardOverviewSection({
           <PaymentsTrendCard
             items={visibility.payments ? paymentsByDayChart : []}
             title="Tendencia de pagos"
-            subtitle="Comportamiento reciente de cobros completados."
+            subtitle=""
             emptyMessage={visibility.payments ? 'No hay datos recientes para graficar.' : 'Sin permiso para ver pagos.'}
           />
 
           <InteractiveDonutCard
             title="Estados de pago"
-            subtitle="Distribucion operativa visible desde el resumen."
+            subtitle=""
             items={visibility.payments ? paymentStatusChart : []}
             emptyMessage={visibility.payments ? 'No hay pagos para mostrar.' : 'Sin permiso para ver pagos.'}
             totalFormatter={(value) => `${value}`}
@@ -124,7 +263,7 @@ export default function DashboardOverviewSection({
 
           <InteractiveDonutCard
             title="Metodos de cobro"
-            subtitle="Participacion de cada canal en el monto recaudado."
+            subtitle=""
             items={visibility.payments ? paymentMethodsChart : []}
             emptyMessage={visibility.payments ? 'No hay metodos para mostrar.' : 'Sin permiso para ver pagos.'}
             totalFormatter={(value) => formatCurrency(value)}
@@ -135,114 +274,13 @@ export default function DashboardOverviewSection({
           <RankingBarsCard
             items={visibility.reports ? morosityByCampusChart : []}
             title="Morosidad por sede"
-            subtitle="Ranking resumido de deuda vencida por sede."
+            subtitle=""
             emptyMessage={
               visibility.reports ? 'No hay morosidad agregada para mostrar.' : 'Sin permiso para ver morosidad.'
             }
           />
         </div>
       </section>
-
-      <div className="grid gap-4 xl:grid-cols-2">
-        <article className="card space-y-4">
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <div>
-              <h2 className="text-lg font-semibold text-primary-900">Pulso general</h2>
-              <p className="text-sm text-primary-700">
-                Vista rapida para saltar a pagos o morosidad sin recorrer toda la pantalla.
-              </p>
-            </div>
-            <span className="rounded-full bg-primary-100 px-3 py-1 text-xs font-semibold text-primary-800">
-              {selectedCampusName}
-            </span>
-          </div>
-
-          <div className="grid gap-3 md:grid-cols-2">
-            <button
-              type="button"
-              onClick={() => onOpenSection('payments')}
-              className="rounded-2xl border border-primary-200 bg-primary-50 p-4 text-left transition hover:border-primary-300 hover:bg-primary-100/70"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-500">Pagos</p>
-              <p className="mt-2 text-xl font-semibold text-primary-900">
-                {visibility.payments ? incomeValue : 'Sin permiso'}
-              </p>
-              <p className="mt-1 text-sm text-primary-700">
-                {visibility.payments
-                  ? latestPayment
-                    ? `Ultimo movimiento: ${latestPayment.student_name}`
-                    : 'Sin movimientos recientes'
-                  : 'No puedes acceder al detalle de cobros'}
-              </p>
-            </button>
-
-            <button
-              type="button"
-              onClick={() => onOpenSection('morosity')}
-              className="rounded-2xl border border-accent-200 bg-accent-50 p-4 text-left transition hover:border-accent-300 hover:bg-accent-100/70"
-            >
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-accent-700">Morosidad</p>
-              <p className="mt-2 text-xl font-semibold text-accent-900">
-                {visibility.reports
-                  ? topMorosityCampus
-                    ? `S/ ${Number(topMorosityCampus.pending_amount || 0).toFixed(2)}`
-                    : 'S/ 0.00'
-                  : 'Sin permiso'}
-              </p>
-              <p className="mt-1 text-sm text-accent-800">
-                {visibility.reports
-                  ? topMorosityCampus
-                    ? `Sede con mayor deuda: ${topMorosityCampus.campus_name}`
-                    : 'Sin deuda vencida agregada'
-                  : 'No puedes acceder al detalle de morosidad'}
-              </p>
-            </button>
-          </div>
-        </article>
-
-        <article className="card space-y-4">
-          <div>
-            <h2 className="text-lg font-semibold text-primary-900">Indicadores destacados</h2>
-            <p className="text-sm text-primary-700">
-              Resumen breve de lo mas relevante dentro del alcance actual de sede.
-            </p>
-          </div>
-
-          <div className="grid gap-3 sm:grid-cols-2">
-            <div className="rounded-2xl border border-primary-100 bg-white p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-500">
-                Metodo dominante
-              </p>
-              <p className="mt-2 text-lg font-semibold text-primary-900">
-                {visibility.payments ? paymentMethodsChart[0]?.label || 'Sin datos' : 'Sin permiso'}
-              </p>
-              <p className="text-sm text-primary-700">
-                {visibility.payments
-                  ? paymentMethodsChart[0]
-                    ? `${paymentMethodsChart[0].shareLabel} del monto cobrado`
-                    : 'No hay registros de pago'
-                  : 'No puedes acceder al detalle de cobros'}
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-primary-100 bg-white p-4">
-              <p className="text-xs font-semibold uppercase tracking-[0.14em] text-primary-500">
-                Estado dominante
-              </p>
-              <p className="mt-2 text-lg font-semibold text-primary-900">
-                {visibility.payments ? paymentStatusChart[0]?.label || 'Sin datos' : 'Sin permiso'}
-              </p>
-              <p className="text-sm text-primary-700">
-                {visibility.payments
-                  ? paymentStatusChart[0]
-                    ? `${paymentStatusChart[0].shareLabel} de transacciones`
-                    : 'No hay transacciones registradas'
-                  : 'No puedes acceder al detalle de transacciones'}
-              </p>
-            </div>
-          </div>
-        </article>
-      </div>
     </>
   );
 }

@@ -4,6 +4,7 @@ import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../constants/permissions';
 import { downloadCsv } from '../utils/csv';
 import { fetchAllPages } from '../utils/paginatedFetch';
+import { openSecureFile } from '../utils/secureFiles';
 import StudentPaymentsPage from './StudentPaymentsPage';
 
 const PAYMENT_STATUS_LABELS = {
@@ -169,6 +170,7 @@ function StaffPaymentsPage() {
   const [loadingPendingSummary, setLoadingPendingSummary] = useState(false);
   const [savingPayment, setSavingPayment] = useState(false);
   const [exportingPayments, setExportingPayments] = useState(false);
+  const [openingEvidenceId, setOpeningEvidenceId] = useState(null);
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [receiptFormat, setReceiptFormat] = useState('F2');
@@ -517,7 +519,7 @@ function StaffPaymentsPage() {
       }));
 
       await downloadCsv({
-        filename: `reporte_pagos_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        filename: `reporte_pagos_${new Date().toISOString().slice(0, 10)}.csv`,
         headers: [
           { key: 'id', label: 'ID' },
           { key: 'fecha_hora', label: 'Fecha/Hora' },
@@ -580,6 +582,27 @@ function StaffPaymentsPage() {
       }
     },
     [receiptFormat],
+  );
+
+  const openPaymentEvidence = useCallback(
+    async (payment) => {
+      if (!payment?.id || payment.no_evidence || !(payment.has_evidence || payment.evidence_url)) return;
+
+      setOpeningEvidenceId(payment.id);
+      setError('');
+      try {
+        await openSecureFile({
+          url: `/payments/${payment.id}/evidence`,
+          params: campusFilter ? { campus_id: campusFilter } : {},
+          filename: payment.evidence_name || `evidencia_pago_${payment.id}`,
+        });
+      } catch (requestError) {
+        setError(getApiErrorMessage(requestError, 'No se pudo abrir la evidencia.'));
+      } finally {
+        setOpeningEvidenceId(null);
+      }
+    },
+    [campusFilter],
   );
 
   const previewPaymentReceipt = async ({ autoPrint = false } = {}) => {
@@ -904,8 +927,15 @@ function StaffPaymentsPage() {
               <div className="flex-1 min-w-0 text-right">
                 {payment.no_evidence ? (
                   <span className="font-semibold text-amber-700">Sin evidencia</span>
-                ) : payment.evidence_url ? (
-                  <a href={payment.evidence_url} target="_blank" rel="noreferrer" className="font-semibold text-primary-700 underline truncate block">{payment.evidence_name || 'Ver evidencia'}</a>
+                ) : payment.has_evidence || payment.evidence_url ? (
+                  <button
+                    type="button"
+                    onClick={() => openPaymentEvidence(payment)}
+                    disabled={openingEvidenceId === payment.id}
+                    className="block w-full truncate text-right font-semibold text-primary-700 underline disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {openingEvidenceId === payment.id ? 'Abriendo...' : payment.evidence_name || 'Ver evidencia'}
+                  </button>
                 ) : (
                   <span className="text-gray-400">-</span>
                 )}
@@ -954,7 +984,7 @@ function StaffPaymentsPage() {
           </div>
         </div>
       )),
-    [canManagePayments, openPaymentReceipt, payments, updateStatus],
+    [canManagePayments, openPaymentEvidence, openPaymentReceipt, openingEvidenceId, payments, updateStatus],
   );
 
   if (!canViewPayments && !canManagePayments) {

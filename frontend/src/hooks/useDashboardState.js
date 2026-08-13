@@ -29,11 +29,32 @@ export default function useDashboardState({
       payments_by_day: [],
       morosity_by_campus: [],
     },
+    cash_register: {
+      today: {
+        completed_count: 0,
+        voided_count: 0,
+        total_completed: '0.00',
+        total_voided: '0.00',
+        cash_received: '0.00',
+        cash_net: '0.00',
+        digital_received: '0.00',
+        change_given: '0.00',
+      },
+      open_session: {
+        open_count: 0,
+        first_session_id: null,
+        opening_amount: '0.00',
+        expected_cash_amount: '0.00',
+        opened_at: null,
+      },
+      recent_transactions: [],
+    },
     visibility: {
       students: false,
       courses: false,
       payments: false,
       reports: false,
+      cash_register: false,
     },
   });
 

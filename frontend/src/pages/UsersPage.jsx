@@ -333,7 +333,7 @@ export default function UsersPage() {
       const rows = buildUserExportRows(allUsers);
 
       await downloadCsv({
-        filename: `usuarios_${new Date().toISOString().slice(0, 10)}.xlsx`,
+        filename: `usuarios_${new Date().toISOString().slice(0, 10)}.csv`,
         headers: [
           { key: 'id', label: 'ID' },
           { key: 'usuario', label: 'Usuario' },

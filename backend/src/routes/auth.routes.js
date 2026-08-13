@@ -1,5 +1,6 @@
 const express = require('express');
 const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
 const rateLimit = require('express-rate-limit');
 const { z } = require('zod');
 const { query, withTransaction } = require('../config/db');
@@ -32,6 +33,7 @@ const {
 const router = express.Router();
 
 const ROLES = ['ADMIN', 'DOCENTE', 'SECRETARIADO', 'DIRECTOR', 'ALUMNO'];
+const REFRESH_COOKIE_NAME = 'computron_refresh';
 const optionalCampusIdSchema = z.preprocess((value) => {
   if (value === undefined) return undefined;
   if (value === null || value === '') return null;
@@ -85,9 +87,12 @@ const loginSchema = z.object({
 });
 
 const refreshSchema = z.object({
-  body: z.object({
-    refresh_token: z.string().min(20),
-  }),
+  body: z
+    .object({
+      refresh_token: z.string().min(20).optional(),
+    })
+    .optional()
+    .default({}),
   params: z.object({}).optional(),
   query: z.object({}).optional(),
 });
@@ -112,6 +117,62 @@ const getUserRoles = async (userId, db = { query }) => {
 
   return rows.map((row) => row.name);
 };
+
+const parseCookieHeader = (cookieHeader = '') =>
+  String(cookieHeader || '')
+    .split(';')
+    .map((part) => part.trim())
+    .filter(Boolean)
+    .reduce((cookies, part) => {
+      const separatorIndex = part.indexOf('=');
+      if (separatorIndex <= 0) return cookies;
+
+      const key = part.slice(0, separatorIndex).trim();
+      const rawValue = part.slice(separatorIndex + 1).trim();
+      if (!key) return cookies;
+
+      try {
+        cookies[key] = decodeURIComponent(rawValue);
+      } catch (_error) {
+        cookies[key] = rawValue;
+      }
+      return cookies;
+    }, {});
+
+const getRefreshCookieOptions = () => ({
+  httpOnly: true,
+  secure: env.nodeEnv === 'production',
+  sameSite: 'lax',
+  path: '/api/auth',
+  maxAge: env.jwt.refreshExpiresDays * 24 * 60 * 60 * 1000,
+});
+
+const getRefreshClearCookieOptions = () => {
+  const { maxAge: _maxAge, ...options } = getRefreshCookieOptions();
+  return options;
+};
+
+const setRefreshCookie = (res, refreshToken) => {
+  res.cookie(REFRESH_COOKIE_NAME, refreshToken, getRefreshCookieOptions());
+};
+
+const clearRefreshCookie = (res) => {
+  res.clearCookie(REFRESH_COOKIE_NAME, getRefreshClearCookieOptions());
+};
+
+const getRefreshTokenFromRequest = (req) => {
+  const bodyToken = req.validated?.body?.refresh_token || req.body?.refresh_token;
+  if (bodyToken) return bodyToken;
+
+  const cookies = parseCookieHeader(req.headers.cookie);
+  return cookies[REFRESH_COOKIE_NAME] || '';
+};
+
+const signSessionRefreshToken = (payload) =>
+  signRefreshToken({
+    ...payload,
+    jti: crypto.randomUUID(),
+  });
 
 router.post(
   '/register',
@@ -444,7 +505,7 @@ router.post(
 
     const payload = { sub: user.id, email: user.email, roles };
     const access_token = signAccessToken(payload);
-    const refresh_token = signRefreshToken(payload);
+    const refresh_token = signSessionRefreshToken(payload);
     const refresh_hash = hashToken(refresh_token);
     const expires_at = new Date(Date.now() + env.jwt.refreshExpiresDays * 24 * 60 * 60 * 1000);
 
@@ -454,9 +515,10 @@ router.post(
       [user.id, refresh_hash, expires_at],
     );
 
+    setRefreshCookie(res, refresh_token);
+
     return res.json({
       access_token,
-      refresh_token,
       user: {
         id: user.id,
         first_name: user.first_name,
@@ -554,12 +616,17 @@ router.post(
   '/refresh',
   validate(refreshSchema),
   asyncHandler(async (req, res) => {
-    const { refresh_token } = req.validated.body;
+    const refresh_token = getRefreshTokenFromRequest(req);
+    if (!refresh_token) {
+      clearRefreshCookie(res);
+      throw new ApiError(401, 'Refresh token no enviado.');
+    }
 
     let decoded;
     try {
       decoded = verifyRefreshToken(refresh_token);
     } catch (error) {
+      clearRefreshCookie(res);
       throw new ApiError(401, 'Refresh token inválido.');
     }
 
@@ -575,6 +642,7 @@ router.post(
     );
 
     if (rows.length === 0) {
+      clearRefreshCookie(res);
       throw new ApiError(401, 'Refresh token expirado o revocado.');
     }
 
@@ -587,23 +655,26 @@ router.post(
     );
 
     if (userResult.rowCount === 0) {
+      clearRefreshCookie(res);
       throw new ApiError(401, 'Usuario no encontrado para este token.');
     }
 
     const currentUser = userResult.rows[0];
     if (!currentUser.is_active) {
+      clearRefreshCookie(res);
       throw new ApiError(403, 'La cuenta está desactivada.');
     }
 
     const roles = await getUserRoles(decoded.sub);
     if (roles.length === 0) {
+      clearRefreshCookie(res);
       throw new ApiError(403, 'Usuario sin roles asignados.');
     }
 
     const payload = { sub: decoded.sub, email: currentUser.email, roles };
 
     const newAccessToken = signAccessToken(payload);
-    const newRefreshToken = signRefreshToken(payload);
+    const newRefreshToken = signSessionRefreshToken(payload);
     const newHash = hashToken(newRefreshToken);
     const expiresAt = new Date(Date.now() + env.jwt.refreshExpiresDays * 24 * 60 * 60 * 1000);
 
@@ -622,9 +693,10 @@ router.post(
       );
     });
 
+    setRefreshCookie(res, newRefreshToken);
+
     return res.json({
       access_token: newAccessToken,
-      refresh_token: newRefreshToken,
     });
   }),
 );
@@ -633,16 +705,21 @@ router.post(
   '/logout',
   validate(refreshSchema),
   asyncHandler(async (req, res) => {
-    const { refresh_token } = req.validated.body;
-    const tokenHash = hashToken(refresh_token);
+    const refresh_token = getRefreshTokenFromRequest(req);
 
-    await query(
-      `UPDATE refresh_tokens
-       SET revoked_at = NOW()
-       WHERE token_hash = $1
-         AND revoked_at IS NULL`,
-      [tokenHash],
-    );
+    if (refresh_token) {
+      const tokenHash = hashToken(refresh_token);
+
+      await query(
+        `UPDATE refresh_tokens
+         SET revoked_at = NOW()
+         WHERE token_hash = $1
+           AND revoked_at IS NULL`,
+        [tokenHash],
+      );
+    }
+
+    clearRefreshCookie(res);
 
     return res.json({ message: 'Sesión cerrada.' });
   }),

@@ -4,9 +4,9 @@ Implementación full stack del sistema de gestión académica y administrativa c
 
 - Backend: Node.js + Express + PostgreSQL
 - Frontend: React + Tailwind CSS
-- Autenticación: JWT (access + refresh)
+- Autenticación: JWT access en memoria + refresh en cookie `httpOnly`
 - Correo: Nodemailer
-- Seguridad: Helmet, CORS, rate limit, hash de contraseñas
+- Seguridad: Helmet, CORS, rate limit, hash de contraseñas, archivos protegidos
 
 ## Módulos incluidos
 
@@ -18,8 +18,10 @@ Implementación full stack del sistema de gestión académica y administrativa c
 - Matrículas por periodo
 - Evaluaciones, notas y asistencia
 - Cuotas, pagos y auditoría de estado de pago
+- Caja administrativa: apertura/cierre, efectivo, métodos mixtos, vuelto y boletas
 - Notificaciones por correo y recordatorios automáticos
 - Reportes financieros y de morosidad
+- Exportación CSV de reportes
 - Base en 3FN con claves foráneas, índices y vistas
 
 ## Estructura
@@ -107,6 +109,41 @@ Luego inicia sesión en el frontend con ese usuario.
 - Notificaciones: `/api/notifications`, `/api/notifications/reminders/run`, `/api/notifications/jobs/*`
 - Catálogos: `/api/catalogs`
 
+## Pruebas y verificación
+
+```bash
+npm test
+npm run build
+npm audit --prefix backend --audit-level=moderate
+npm audit --prefix frontend --audit-level=moderate
+```
+
+Los reportes descargan CSV para evitar dependencias vulnerables de lectura/escritura
+Excel en el navegador.
+
+## Integración SUNAT
+
+El módulo de caja queda preparado para consumir la API externa
+`yorchavez9/Api-de-facturacion-electronica-sunat-Peru` como servicio separado.
+Levanta esa API Laravel, configura empresa/sucursal/correlativos/certificado y coloca en
+`backend/.env`:
+
+```env
+SUNAT_API_BASE_URL=http://localhost:8000
+SUNAT_API_TOKEN=token_sanctum
+SUNAT_API_COMPANY_ID=1
+SUNAT_API_BRANCH_ID=1
+SUNAT_API_BOLETA_SERIE=B001
+SUNAT_API_FACTURA_SERIE=F001
+SUNAT_API_BOLETA_METODO_ENVIO=resumen_diario
+```
+
+Desde `Caja`, cada boleta/factura puede enviarse manualmente con el botón `SUNAT`.
+El sistema guarda el estado, número SUNAT y respuesta de la API en
+`electronic_document_submissions`. Por defecto los servicios se envían como operaciones
+inafectas (`SUNAT_API_TAX_PERCENT=0`, `SUNAT_API_IGV_AFFECTATION=30`); cambia esas
+variables si vas a emitir con IGV.
+
 ## Control de accesos (RBAC por permisos)
 
 - Cada rol tiene permisos granulares de `view` y `manage` por módulo.
@@ -132,5 +169,8 @@ Luego inicia sesión en el frontend con ese usuario.
 - Cambiar secretos JWT y contraseñas por valores robustos.
 - Restringir CORS a dominio productivo.
 - Forzar HTTPS con redirección en Nginx.
+- Mantener el backend detrás de `/api` en el mismo dominio del frontend para que la
+  cookie `httpOnly` de refresh funcione correctamente.
+- Ajustar `API_RATE_LIMIT_WINDOW_MS` y `API_RATE_LIMIT_MAX` según el tráfico real.
 - Configurar backup automático de PostgreSQL.
 - Usar SMTP real (HostGator o proveedor externo) en `backend/.env`.

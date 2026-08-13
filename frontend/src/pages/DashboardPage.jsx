@@ -1,8 +1,9 @@
 import { useMemo, useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { Navigate, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { PERMISSIONS } from '../constants/permissions';
 import { DASHBOARD_SECTION_ITEMS } from '../constants/dashboardSections';
+import { buildManagementSectionPath } from '../constants/managementSections';
 import DashboardCampusScopeCard from '../components/dashboard/DashboardCampusScopeCard';
 import DashboardMorositySection from '../components/dashboard/DashboardMorositySection';
 import DashboardOverviewSection from '../components/dashboard/DashboardOverviewSection';
@@ -13,6 +14,7 @@ import useDashboardSections from '../hooks/useDashboardSections';
 import useDashboardState from '../hooks/useDashboardState';
 
 export default function DashboardPage() {
+  const navigate = useNavigate();
   const { user, hasPermission } = useAuth();
   const [hideIncome, setHideIncome] = useState(false);
   const canViewDashboard = hasPermission(PERMISSIONS.DASHBOARD_VIEW);
@@ -29,8 +31,6 @@ export default function DashboardPage() {
     (user?.roles || []).includes('ADMIN') && assignedCampusIds.length === 0;
   const canSelectCampus =
     canViewCampuses || assignedCampusIds.length > 1 || allowGlobalCampusScope;
-  const isTeacher2222 = user?.email?.trim().toLowerCase() === '2222@gmail.com';
-  const isDocente = (user?.roles || []).includes('DOCENTE');
   const isAlumnoProfile = (user?.roles || []).length === 1 && (user?.roles || []).includes('ALUMNO');
   const dashboardSections = useMemo(
     () =>
@@ -65,10 +65,6 @@ export default function DashboardPage() {
     () => createDashboardViewModel({ summary, hideIncome }),
     [hideIncome, summary],
   );
-
-  if (isTeacher2222 && isDocente) {
-    return <Navigate to="/courses" replace />;
-  }
 
   if (isAlumnoProfile) {
     return <Navigate to="/courses" replace />;
@@ -109,15 +105,14 @@ export default function DashboardPage() {
           incomeValue={dashboardViewModel.incomeValue}
           incomeHint={dashboardViewModel.incomeHint}
           hideIncome={hideIncome}
-          selectedCampusName={selectedCampusName}
-          latestPayment={dashboardViewModel.latestPayment}
-          topMorosityCampus={dashboardViewModel.topMorosityCampus}
+          cashRegister={dashboardViewModel.cashRegister}
           paymentMethodsChart={dashboardViewModel.paymentMethodsChart}
           paymentStatusChart={dashboardViewModel.paymentStatusChart}
           paymentsByDayChart={dashboardViewModel.paymentsByDayChart}
           morosityByCampusChart={dashboardViewModel.morosityByCampusChart}
           onToggleIncome={() => setHideIncome((current) => !current)}
           onOpenSection={changeSection}
+          onOpenCashRegister={() => navigate(buildManagementSectionPath('cash_register'))}
         />
       ) : null}
 
