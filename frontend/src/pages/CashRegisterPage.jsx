@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
+  AlertTriangle,
   Ban,
+  Banknote,
+  CheckCircle2,
   CircleDollarSign,
+  CreditCard,
   Lock,
   Plus,
   Printer,
@@ -48,6 +52,13 @@ const RECEIPT_DOCUMENT_TYPE_LABELS = {
   RECIBO_INTERNO: 'Recibo interno',
 };
 
+const DEFAULT_RECEIPT_FORMAT = 'F3';
+const RECEIPT_FORMAT_LABELS = {
+  F3: 'Doble horizontal',
+  F2: 'A4 simple',
+  F1: 'Ticket',
+};
+
 const SUNAT_STATUS_LABELS = {
   PENDIENTE: 'Pendiente',
   PROCESANDO: 'Procesando',
@@ -69,6 +80,7 @@ const isSunatDocumentType = (documentType) => ['BOLETA', 'FACTURA'].includes(doc
 
 const CASH_INITIAL_LIMIT = 12;
 const CASH_LOAD_STEP = 12;
+const QUICK_CASH_AMOUNTS = [20, 50, 100, 200];
 
 const saleDefaults = {
   student_id: '',
@@ -203,7 +215,7 @@ export default function CashRegisterPage() {
   const [dateToFilter, setDateToFilter] = useState(getTodayIsoDate);
   const [visibleCount, setVisibleCount] = useState(CASH_INITIAL_LIMIT);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
-  const [receiptFormat, setReceiptFormat] = useState('F2');
+  const [receiptFormat, setReceiptFormat] = useState(DEFAULT_RECEIPT_FORMAT);
   const [showServiceEditor, setShowServiceEditor] = useState(false);
   const [openingAmount, setOpeningAmount] = useState('0.00');
   const [openingNotes, setOpeningNotes] = useState('');
@@ -245,6 +257,39 @@ export default function CashRegisterPage() {
     () => calculateCashCartTotals({ cartItems, paymentLines }),
     [cartItems, paymentLines],
   );
+  const hasPaymentInput = useMemo(
+    () => paymentLines.some((payment) => String(payment.amount || '').trim() !== ''),
+    [paymentLines],
+  );
+  const cashDueAmount = round2(Math.max(cartTotals.totalAmount - cartTotals.digitalReceived, 0));
+  const quickCashAmounts = useMemo(
+    () =>
+      QUICK_CASH_AMOUNTS.filter((amount) => amount > 0).map((amount) => ({
+        label: `S/ ${amount}`,
+        value: amount,
+      })),
+    [],
+  );
+  const missingPaymentReference = useMemo(
+    () =>
+      paymentLines.some((payment, index) => {
+        if (payment.method === 'EFECTIVO') return false;
+        const amount = toMoneyNumber(payment.amount);
+        const shouldCountAsPayment = amount > 0 || (!hasPaymentInput && index === 0 && cartTotals.totalAmount > 0);
+        return shouldCountAsPayment && !String(payment.reference_code || '').trim();
+      }),
+    [cartTotals.totalAmount, hasPaymentInput, paymentLines],
+  );
+  const saleSubmitBlocker = useMemo(() => {
+    if (!currentSession) return 'Abre caja para cobrar.';
+    if (!cartItems.length) return 'Agrega al menos un servicio.';
+    if (!saleForm.customer_name.trim()) return 'Ingresa el cliente.';
+    if (cartTotals.missingAmount > 0) return `Falta cobrar ${formatCurrency(cartTotals.missingAmount)}.`;
+    if (cartTotals.invalidChangeAmount > 0) return 'El vuelto debe salir del efectivo recibido.';
+    if (missingPaymentReference) return 'Falta número de operación.';
+    return '';
+  }, [cartItems.length, cartTotals.invalidChangeAmount, cartTotals.missingAmount, currentSession, missingPaymentReference, saleForm.customer_name]);
+  const canSubmitSale = Boolean(canManageCash && currentSession && !savingSale && !saleSubmitBlocker);
 
   const sessionSummary = currentSession?.summary || {};
   const expectedCashAmount = currentSession
@@ -452,6 +497,37 @@ export default function CashRegisterPage() {
 
   const addPaymentLine = () => {
     setPaymentLines((current) => [...current, createPaymentLine()]);
+  };
+
+  const applyQuickCashAmount = (amount) => {
+    const normalizedAmount = round2(amount).toFixed(2);
+    setPaymentLines((current) => {
+      const existingLines = current.length ? current : [createPaymentLine()];
+      const cashIndex = existingLines.findIndex((payment) => payment.method === 'EFECTIVO');
+
+      if (cashIndex >= 0) {
+        return existingLines.map((payment, paymentIndex) =>
+          paymentIndex === cashIndex
+            ? {
+                ...payment,
+                method: 'EFECTIVO',
+                amount: normalizedAmount,
+                reference_code: '',
+              }
+            : payment,
+        );
+      }
+
+      return [
+        {
+          ...createPaymentLine(),
+          method: 'EFECTIVO',
+          amount: normalizedAmount,
+          reference_code: '',
+        },
+        ...existingLines,
+      ];
+    });
   };
 
   const updatePaymentLine = (index, patch) => {
@@ -885,8 +961,9 @@ export default function CashRegisterPage() {
             onChange={(event) => setReceiptFormat(event.target.value)}
             aria-label="Diseño de comprobante"
           >
+            <option value="F3">Doble horizontal</option>
+            <option value="F2">A4 simple</option>
             <option value="F1">Ticket</option>
-            <option value="F2">A4</option>
           </select>
           {canManageCash ? (
             <button
@@ -904,7 +981,133 @@ export default function CashRegisterPage() {
       {message ? <p className="app-alert app-alert-info">{message}</p> : null}
       {error ? <p className="app-alert app-alert-danger">{error}</p> : null}
 
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+      {!currentSession ? (
+        <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_360px]">
+          <article className="overflow-hidden rounded-lg border border-amber-200 bg-white">
+            <div className="border-b border-amber-100 bg-amber-50 px-5 py-4">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="inline-flex items-center gap-2 rounded-full bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-900">
+                  <Lock className="h-3.5 w-3.5" />
+                  Caja cerrada
+                </span>
+                <span className="inline-flex items-center gap-2 rounded-full bg-white px-3 py-1 text-xs font-semibold text-primary-700">
+                  {activeServices.length} servicios activos
+                </span>
+              </div>
+              <h2 className="mt-3 text-xl font-semibold text-primary-950">Abrir caja para comenzar</h2>
+              <p className="mt-1 text-sm text-slate-600">
+                Define el efectivo inicial y la sede activa antes de registrar cobros.
+              </p>
+            </div>
+
+            <div className="grid gap-4 p-5 lg:grid-cols-[minmax(0,1fr)_280px]">
+              {canManageCash ? (
+                <form onSubmit={openCashSession} className="space-y-4">
+                  {canViewCampuses && campuses.length ? (
+                    <p className="rounded-lg border border-primary-100 bg-primary-50 px-3 py-2 text-sm text-primary-800">
+                      Se abrirá en la sede activa del selector superior.
+                    </p>
+                  ) : null}
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-primary-700">Monto inicial en efectivo</span>
+                    <input
+                      type="text"
+                      inputMode="decimal"
+                      className="app-input text-lg font-semibold"
+                      placeholder="0.00"
+                      value={openingAmount}
+                      onChange={(event) => setOpeningAmount(normalizeMoneyInput(event.target.value))}
+                      required
+                    />
+                  </label>
+                  <label className="space-y-1">
+                    <span className="text-xs font-semibold uppercase text-primary-700">Nota de apertura</span>
+                    <input
+                      className="app-input"
+                      maxLength={400}
+                      placeholder="Opcional"
+                      value={openingNotes}
+                      onChange={(event) => setOpeningNotes(event.target.value)}
+                    />
+                  </label>
+                  <button
+                    type="submit"
+                    disabled={savingSession}
+                    className="btn-success w-full"
+                  >
+                    <Unlock className="h-4 w-4" />
+                    {savingSession ? 'Abriendo...' : 'Abrir caja ahora'}
+                  </button>
+                </form>
+              ) : (
+                <div className="rounded-lg border border-amber-100 bg-amber-50 p-4">
+                  <p className="font-semibold text-amber-900">No tienes permiso para abrir caja.</p>
+                  <p className="mt-1 text-sm text-amber-800">
+                    Necesitas el permiso cash_register.manage para iniciar operaciones.
+                  </p>
+                  <button
+                    type="button"
+                    onClick={refreshCashPermissions}
+                    disabled={refreshingPermissions}
+                    className="mt-3 rounded-lg border border-amber-200 bg-white px-3 py-2 text-xs font-bold text-amber-900 transition hover:bg-amber-100 disabled:opacity-60"
+                  >
+                    {refreshingPermissions ? 'Refrescando...' : 'Refrescar permisos'}
+                  </button>
+                </div>
+              )}
+
+              <div className="space-y-3">
+                <div className="metric-tile bg-white">
+                  <p className="metric-label">Comprobante</p>
+                  <p className="metric-value">{RECEIPT_FORMAT_LABELS[receiptFormat] || 'Doble horizontal'}</p>
+                </div>
+                <div className="metric-tile bg-white">
+                  <p className="metric-label">SUNAT</p>
+                  <p className="metric-value">{sunatConfig?.configured ? 'Listo' : 'Pendiente'}</p>
+                </div>
+                <div className="metric-tile bg-white">
+                  <p className="metric-label">Última revisión</p>
+                  <p className="metric-value">{sessions.length ? formatDateTime(sessions[0]?.opened_at) : 'Sin sesiones'}</p>
+                </div>
+              </div>
+            </div>
+          </article>
+
+          <aside className="space-y-4">
+            <article className="card space-y-3">
+              <h2 className="text-lg font-semibold text-primary-900">Últimas sesiones</h2>
+              <div className="space-y-2">
+                {sessions.slice(0, 4).map((session) => (
+                  <div key={session.id} className="rounded-lg border border-primary-100 bg-white p-3 text-sm">
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-semibold text-primary-900">Caja #{session.id}</span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                          session.status === 'OPEN' ? 'bg-emerald-100 text-emerald-800' : 'bg-primary-100 text-primary-700'
+                        }`}
+                      >
+                        {session.status === 'OPEN' ? 'Abierta' : 'Cerrada'}
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-primary-600">{formatDateTime(session.opened_at)}</p>
+                    <p className="mt-2 text-xs text-primary-700">
+                      Total: {formatCurrency(session.summary?.total_completed)} · Efectivo:{' '}
+                      {formatCurrency(session.summary?.cash_sales)}
+                    </p>
+                    {session.status === 'CLOSED' ? (
+                      <p className="text-xs text-primary-700">
+                        Dif.: {formatCurrency(session.difference_amount || 0)}
+                      </p>
+                    ) : null}
+                  </div>
+                ))}
+                {!sessions.length ? <p className="text-sm text-primary-600">Sin sesiones registradas.</p> : null}
+              </div>
+            </article>
+          </aside>
+        </div>
+      ) : (
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_380px]">
         <article className="panel-soft space-y-4">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
@@ -936,7 +1139,7 @@ export default function CashRegisterPage() {
             ))}
           </div>
 
-          <form onSubmit={submitSale} className="space-y-4">
+          <form id="cash-sale-form" onSubmit={submitSale} className="space-y-4">
             <div className="overflow-x-auto rounded-xl border border-primary-100 bg-white">
               <table className="min-w-full text-sm">
                 <thead>
@@ -1164,7 +1367,10 @@ export default function CashRegisterPage() {
                         placeholder={payment.method === 'EFECTIVO' ? 'Opcional' : 'Obligatorio'}
                         value={payment.reference_code}
                         onChange={(event) => updatePaymentLine(index, { reference_code: event.target.value })}
-                        required={payment.method !== 'EFECTIVO'}
+                        required={
+                          payment.method !== 'EFECTIVO' &&
+                          (toMoneyNumber(payment.amount) > 0 || (!hasPaymentInput && index === 0))
+                        }
                       />
                     </label>
 
@@ -1242,87 +1448,151 @@ export default function CashRegisterPage() {
               </fieldset>
             ) : null}
 
-            <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-5">
-              <article className="metric-tile">
-                <p className="metric-label">Total</p>
-                <p className="ui-numeric mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.totalAmount)}</p>
-              </article>
-              <article className="metric-tile">
-                <p className="metric-label">Cobrado</p>
-                <p className="ui-numeric mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.amountReceived)}</p>
-              </article>
-              <article className="metric-tile">
-                <p className="metric-label">Efectivo recibido</p>
-                <p className="ui-numeric mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.cashReceived)}</p>
-              </article>
-              <article className="metric-tile">
-                <p className="metric-label">Efectivo caja</p>
-                <p className="ui-numeric mt-1 text-2xl font-semibold text-primary-900">{formatCurrency(cartTotals.cashNetAmount)}</p>
-              </article>
-              <article className="metric-tile">
-                <p className="metric-label">Vuelto</p>
-                <p className="ui-numeric mt-1 text-2xl font-semibold text-emerald-700">{formatCurrency(cartTotals.changeAmount)}</p>
-              </article>
-            </div>
-
-            {cartTotals.changeAmount > 0 && cartTotals.invalidChangeAmount <= 0 ? (
-              <div className="rounded-xl border border-emerald-200 bg-emerald-50 p-4">
-                <p className="text-xs font-semibold uppercase text-emerald-700">Vuelto exacto a entregar</p>
-                <p className="mt-1 text-3xl font-bold text-emerald-800">
+            <div className="rounded-lg border border-primary-100 bg-slate-50 p-3 xl:hidden">
+              <div className="flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-600">Total</span>
+                <span className="ui-numeric text-xl font-semibold text-primary-900">
+                  {formatCurrency(cartTotals.totalAmount)}
+                </span>
+              </div>
+              <div className="mt-1 flex items-center justify-between gap-3">
+                <span className="text-sm font-semibold text-slate-600">Vuelto</span>
+                <span className="ui-numeric text-xl font-semibold text-emerald-700">
                   {formatCurrency(cartTotals.changeAmount)}
-                </p>
+                </span>
               </div>
-            ) : null}
-
-            {cartTotals.invalidChangeAmount > 0 ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-                El vuelto debe salir del efectivo recibido. Ajusta el importe en efectivo.
-              </div>
-            ) : null}
-
-            {cartTotals.missingAmount > 0 ? (
-              <div className="rounded-xl border border-red-200 bg-red-50 p-3 text-sm font-semibold text-red-700">
-                Falta cobrar {formatCurrency(cartTotals.missingAmount)}.
-              </div>
-            ) : null}
-
-            <div className="flex flex-wrap gap-2">
-              <button
-                type="submit"
-                onClick={() => {
-                  submitModeRef.current = 'save';
-                }}
-                disabled={savingSale || !canManageCash || !currentSession}
-                className="btn-primary"
-              >
-                <Save className="h-4 w-4" />
-                {savingSale ? 'Guardando...' : 'Guardar y emitir boleta'}
-              </button>
-              <button
-                type="submit"
-                onClick={() => {
-                  submitModeRef.current = 'print';
-                }}
-                disabled={savingSale || !canManageCash || !currentSession}
-                className="btn-secondary"
-              >
-                <Printer className="h-4 w-4" />
-                {savingSale ? 'Procesando...' : 'Guardar, emitir e imprimir'}
-              </button>
-              <button
-                type="button"
-                onClick={resetSale}
-                className="btn-secondary"
-              >
-                <RotateCcw className="h-4 w-4" />
-                Limpiar
-              </button>
             </div>
           </form>
         </article>
 
         <aside className="space-y-4">
-          <article className="card space-y-3 xl:sticky xl:top-24">
+          <article className="card space-y-4 border-emerald-200 xl:sticky xl:top-24">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-semibold text-primary-900">Cobro</h2>
+                <p className="text-xs text-slate-500">Totales y emisión</p>
+              </div>
+              {saleSubmitBlocker ? (
+                <AlertTriangle className="h-5 w-5 text-amber-600" />
+              ) : (
+                <CheckCircle2 className="h-5 w-5 text-emerald-700" />
+              )}
+            </div>
+
+            <div className="rounded-lg bg-primary-900 p-4 text-white">
+              <p className="text-xs font-semibold uppercase text-primary-100">Total a cobrar</p>
+              <p className="ui-numeric mt-1 text-3xl font-semibold">{formatCurrency(cartTotals.totalAmount)}</p>
+              <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                <div className="rounded-lg bg-white/10 p-2">
+                  <p className="text-primary-100">Cobrado</p>
+                  <p className="ui-numeric font-semibold">{formatCurrency(cartTotals.amountReceived)}</p>
+                </div>
+                <div className="rounded-lg bg-white/10 p-2">
+                  <p className="text-primary-100">Falta</p>
+                  <p className="ui-numeric font-semibold">{formatCurrency(cartTotals.missingAmount)}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="metric-tile bg-white">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="metric-label">Efectivo</p>
+                  <Banknote className="h-4 w-4 text-primary-600" />
+                </div>
+                <p className="metric-value">{formatCurrency(cartTotals.cashReceived)}</p>
+              </div>
+              <div className="metric-tile bg-white">
+                <div className="flex items-center justify-between gap-2">
+                  <p className="metric-label">Digital</p>
+                  <CreditCard className="h-4 w-4 text-primary-600" />
+                </div>
+                <p className="metric-value">{formatCurrency(cartTotals.digitalReceived)}</p>
+              </div>
+              <div className="metric-tile bg-white">
+                <p className="metric-label">Efectivo caja</p>
+                <p className="metric-value">{formatCurrency(cartTotals.cashNetAmount)}</p>
+              </div>
+              <div className="metric-tile bg-emerald-50">
+                <p className="metric-label text-emerald-700">Vuelto</p>
+                <p className="ui-numeric mt-1 text-2xl font-semibold text-emerald-800">
+                  {formatCurrency(cartTotals.changeAmount)}
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              <p className="text-xs font-semibold uppercase text-primary-700">Efectivo rápido</p>
+              <div className="grid grid-cols-3 gap-2">
+                <button
+                  type="button"
+                  onClick={() => applyQuickCashAmount(cashDueAmount)}
+                  disabled={cartTotals.totalAmount <= 0}
+                  className="rounded-lg border border-primary-200 bg-white px-2 py-2 text-sm font-semibold text-primary-800 transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
+                >
+                  Exacto
+                </button>
+                {quickCashAmounts.map((option) => (
+                  <button
+                    key={option.value}
+                    type="button"
+                    onClick={() => applyQuickCashAmount(option.value)}
+                    disabled={cartTotals.totalAmount <= 0}
+                    className="rounded-lg border border-primary-200 bg-white px-2 py-2 text-sm font-semibold text-primary-800 transition hover:bg-primary-50 disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {option.label}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {saleSubmitBlocker ? (
+              <p className="rounded-lg border border-amber-100 bg-amber-50 px-3 py-2 text-sm font-semibold text-amber-900">
+                {saleSubmitBlocker}
+              </p>
+            ) : (
+              <p className="rounded-lg border border-emerald-100 bg-emerald-50 px-3 py-2 text-sm font-semibold text-emerald-800">
+                Listo para emitir comprobante.
+              </p>
+            )}
+
+            <div className="space-y-2">
+              <button
+                type="submit"
+                form="cash-sale-form"
+                onClick={() => {
+                  submitModeRef.current = 'save';
+                }}
+                disabled={!canSubmitSale}
+                className="btn-primary w-full"
+              >
+                <Save className="h-4 w-4" />
+                {savingSale ? 'Guardando...' : 'Guardar y emitir'}
+              </button>
+              <button
+                type="submit"
+                form="cash-sale-form"
+                onClick={() => {
+                  submitModeRef.current = 'print';
+                }}
+                disabled={!canSubmitSale}
+                className="btn-secondary w-full"
+              >
+                <Printer className="h-4 w-4" />
+                {savingSale ? 'Procesando...' : 'Guardar e imprimir'}
+              </button>
+              <button
+                type="button"
+                onClick={resetSale}
+                className="btn-secondary w-full"
+              >
+                <RotateCcw className="h-4 w-4" />
+                Limpiar operación
+              </button>
+            </div>
+          </article>
+
+          <article className="card space-y-3">
             <div className="flex items-center justify-between gap-3">
               <h2 className="text-lg font-semibold text-primary-900">Sesión</h2>
               <CircleDollarSign className="h-5 w-5 text-primary-700" />
@@ -1463,6 +1733,7 @@ export default function CashRegisterPage() {
           </article>
         </aside>
       </div>
+      )}
 
       {showServiceEditor ? (
         <article className="card space-y-4">

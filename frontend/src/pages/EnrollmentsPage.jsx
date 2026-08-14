@@ -59,6 +59,13 @@ const getScheduleBlocks = (scheduleInfo) =>
     .map((block) => block.trim().replace(/\s+/g, ' '))
     .filter(Boolean);
 
+const DEFAULT_RECEIPT_FORMAT = 'F3';
+const RECEIPT_FORMAT_LABELS = {
+  F3: 'Boleta doble horizontal',
+  F2: 'Boleta A4 simple',
+  F1: 'Boleta ticketera',
+};
+
 export default function EnrollmentsPage() {
   const { hasPermission } = useAuth();
   const [enrollments, setEnrollments] = useState([]);
@@ -77,7 +84,7 @@ export default function EnrollmentsPage() {
   const [showQuickEnrollmentForm, setShowQuickEnrollmentForm] = useState(false);
   const [showInstallmentForm, setShowInstallmentForm] = useState(false);
   const [showPeriodForm, setShowPeriodForm] = useState(false);
-  const [receiptFormat, setReceiptFormat] = useState('F2');
+  const [receiptFormat, setReceiptFormat] = useState(DEFAULT_RECEIPT_FORMAT);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -476,8 +483,11 @@ export default function EnrollmentsPage() {
               value={receiptFormat}
               onChange={(event) => setReceiptFormat(event.target.value)}
             >
-              <option value="F1">Boleta Ticketera</option>
-              <option value="F2">Boleta A4</option>
+              {Object.entries(RECEIPT_FORMAT_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
 
             {canManageEnrollments ? (

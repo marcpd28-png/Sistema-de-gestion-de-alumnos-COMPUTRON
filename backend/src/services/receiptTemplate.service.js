@@ -4,9 +4,17 @@ const path = require('path');
 const receiptTemplates = {
   F1: path.resolve(__dirname, '..', 'templates', 'boleta.formato1.html'),
   F2: path.resolve(__dirname, '..', 'templates', 'boleta.formato2.html'),
+  F3: path.resolve(__dirname, '..', 'templates', 'boleta.formato3.html'),
+};
+
+const receiptAssets = {
+  F3_LOGO: path.resolve(__dirname, '..', 'templates', 'assets', 'logo-computron-recibo.png'),
+  F3_WATERMARK: path.resolve(__dirname, '..', 'templates', 'assets', 'watermark-computron-recibo.png'),
 };
 
 const templateCache = new Map();
+const assetCache = new Map();
+const DEFAULT_RECEIPT_FORMAT = 'F3';
 
 const escapeHtml = (value) =>
   String(value ?? '')
@@ -44,7 +52,7 @@ const normalizeReceiptFormat = (value) => {
   const raw = String(value || '')
     .trim()
     .toUpperCase();
-  return raw === 'F1' ? 'F1' : 'F2';
+  return receiptTemplates[raw] ? raw : DEFAULT_RECEIPT_FORMAT;
 };
 
 const RECEIPT_DOCUMENT_METADATA = {
@@ -162,6 +170,20 @@ const loadTemplateByFormat = (format) => {
   return cached.html;
 };
 
+const loadAssetDataUrl = (assetPath, mimeType) => {
+  const stat = fs.statSync(assetPath);
+  const cached = assetCache.get(assetPath);
+
+  if (!cached || cached.mtimeMs !== stat.mtimeMs) {
+    const base64 = fs.readFileSync(assetPath).toString('base64');
+    const dataUrl = `data:${mimeType};base64,${base64}`;
+    assetCache.set(assetPath, { dataUrl, mtimeMs: stat.mtimeMs });
+    return dataUrl;
+  }
+
+  return cached.dataUrl;
+};
+
 const replaceTokens = (template, replacements) =>
   Object.entries(replacements).reduce((current, [key, value]) => {
     return current.replaceAll(`{{${key}}}`, String(value ?? ''));
@@ -227,7 +249,7 @@ const buildQrBoxContent = (qrImageDataUrl, validationUrl) => {
 };
 
 const buildReceiptHtml = ({
-  format = 'F2',
+  format = DEFAULT_RECEIPT_FORMAT,
   documentType = 'BOLETA',
   documentNumber,
   issueDate,
@@ -265,15 +287,28 @@ const buildReceiptHtml = ({
   const safeCustomerAddress = String(customerAddress || '').trim();
   const safePaymentReceivedLabel = String(paymentReceivedLabel || 'A Cta');
   const safePaymentSummary = String(paymentSummary || '').trim();
+  const f3DocumentTitle = selectedDocumentType === 'FACTURA' ? documentMetadata.title : 'Recibo Ingreso';
+  const f3AmountWords = amountToWords(totalNumeric).replace(' CON ', ' con ');
+  const f3CustomerName = String(customerName || '').trim();
+  const f3StudentName = String(studentName || '').trim();
+  const f3SenoresValue =
+    f3CustomerName && f3CustomerName.toLowerCase() !== f3StudentName.toLowerCase() ? f3CustomerName : '';
+  const f3LogoImage = selectedFormat === 'F3' ? loadAssetDataUrl(receiptAssets.F3_LOGO, 'image/png') : '';
+  const f3WatermarkImage =
+    selectedFormat === 'F3' ? loadAssetDataUrl(receiptAssets.F3_WATERMARK, 'image/png') : '';
 
   const replacements = {
+    F3_LOGO_IMAGE: escapeHtml(f3LogoImage),
+    F3_WATERMARK_IMAGE: escapeHtml(f3WatermarkImage),
     DOCUMENT_TITLE: escapeHtml(documentMetadata.title),
+    DOCUMENT_TITLE_F3: escapeHtml(f3DocumentTitle),
     DOCUMENT_NUMBER: escapeHtml(documentNumber || '-'),
     ISSUE_DATE: escapeHtml(dateParts.date),
     ISSUE_TIME: escapeHtml(dateParts.time),
     ISSUED_BY: escapeHtml(issuedBy || '-'),
     CLASSROOM_LABEL: escapeHtml(classroomLabel || '-'),
     CUSTOMER_NAME: escapeHtml(customerName || studentName || '-'),
+    CUSTOMER_NAME_F3: escapeHtml(f3SenoresValue),
     CUSTOMER_DOCUMENT_LABEL: escapeHtml(documentMetadata.customerDocumentLabel),
     CUSTOMER_DOCUMENT: escapeHtml(customerDocument || studentDocument || '-'),
     CUSTOMER_ADDRESS_ROW_F1: safeCustomerAddress
@@ -314,6 +349,7 @@ const buildReceiptHtml = ({
         : '',
     STATUS_LABEL: escapeHtml(statusLabel),
     AMOUNT_WORDS: escapeHtml(amountToWords(totalNumeric)),
+    AMOUNT_WORDS_F3: escapeHtml(f3AmountWords),
     VALIDATION_URL: escapeHtml(validationUrl),
     QR_BOX_CONTENT: buildQrBoxContent(qrImageDataUrl, validationUrl),
     RUC_NUMBER: escapeHtml(rucNumber),
@@ -324,6 +360,7 @@ const buildReceiptHtml = ({
 };
 
 module.exports = {
+  DEFAULT_RECEIPT_FORMAT,
   buildReceiptHtml,
   normalizeReceiptDocumentType,
   normalizeReceiptFormat,

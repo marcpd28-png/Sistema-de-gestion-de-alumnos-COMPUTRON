@@ -8,6 +8,7 @@ const validate = require('../middlewares/validate');
 const { authenticate, authorizePermission } = require('../middlewares/auth');
 const { parseCampusScopeId } = require('../utils/campusScope');
 const {
+  DEFAULT_RECEIPT_FORMAT,
   buildReceiptHtml,
   normalizeReceiptDocumentType,
   normalizeReceiptFormat,
@@ -314,8 +315,8 @@ const buildReceiptVerificationPath = (receiptToken, format) => {
   const normalizedToken = encodeURIComponent(String(receiptToken || '').trim());
   const searchParams = new URLSearchParams();
   const normalizedFormat = normalizeReceiptFormat(format);
-  if (normalizedFormat === 'F1') {
-    searchParams.set('format', 'F1');
+  if (normalizedFormat !== DEFAULT_RECEIPT_FORMAT) {
+    searchParams.set('format', normalizedFormat);
   }
   const queryString = searchParams.toString();
   return `/api/cash-register/verify/${normalizedToken}${queryString ? `?${queryString}` : ''}`;

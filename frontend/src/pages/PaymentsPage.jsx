@@ -30,6 +30,13 @@ const RECEIPT_DOCUMENT_TYPE_LABELS = {
   RECIBO_INTERNO: 'Recibo interno',
 };
 
+const DEFAULT_RECEIPT_FORMAT = 'F3';
+const RECEIPT_FORMAT_LABELS = {
+  F3: 'Doble horizontal',
+  F2: 'A4 simple',
+  F1: 'Ticket',
+};
+
 const ALL_PENDING_INSTALLMENTS = 'ALL';
 const PAYMENT_INITIAL_LIMIT = 10;
 const PAYMENT_LOAD_STEP = 10;
@@ -173,7 +180,7 @@ function StaffPaymentsPage() {
   const [openingEvidenceId, setOpeningEvidenceId] = useState(null);
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
-  const [receiptFormat, setReceiptFormat] = useState('F2');
+  const [receiptFormat, setReceiptFormat] = useState(DEFAULT_RECEIPT_FORMAT);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -1133,8 +1140,11 @@ function StaffPaymentsPage() {
               onChange={(event) => setReceiptFormat(event.target.value)}
               aria-label="Diseño del comprobante"
             >
-              <option value="F1">Diseño ticket</option>
-              <option value="F2">Diseño A4</option>
+              {Object.entries(RECEIPT_FORMAT_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
             </select>
           </div>
 

@@ -67,6 +67,8 @@ router.get(
           expected_cash_amount: '0.00',
           opened_at: null,
         },
+        sunat_pending_count: 0,
+        sunat_error_count: 0,
         recent_transactions: [],
       },
       recent_payments: [],
@@ -373,6 +375,31 @@ router.get(
           [campusScopeId],
         ).then((result) => {
           summary.cash_register.recent_transactions = result.rows;
+        }),
+      );
+
+      tasks.push(
+        query(
+          `SELECT
+             COUNT(*) FILTER (
+               WHERE COALESCE(eds.sunat_status, 'PENDIENTE') IN ('PENDIENTE', 'PROCESANDO', 'ENVIADO')
+             )::int AS sunat_pending_count,
+             COUNT(*) FILTER (
+               WHERE COALESCE(eds.sunat_status, 'PENDIENTE') IN ('ERROR', 'RECHAZADO')
+             )::int AS sunat_error_count
+           FROM cash_transactions ct
+           LEFT JOIN electronic_document_submissions eds
+             ON eds.source_type = 'CASH_TRANSACTION'
+            AND eds.source_id = ct.id
+           WHERE ($1::bigint IS NULL OR ct.campus_id = $1)
+             AND ct.status = 'COMPLETED'
+             AND ct.receipt_document_type IN ('BOLETA', 'FACTURA')
+             AND ct.created_at::date = CURRENT_DATE`,
+          [campusScopeId],
+        ).then((result) => {
+          const row = result.rows[0] || {};
+          summary.cash_register.sunat_pending_count = row.sunat_pending_count || 0;
+          summary.cash_register.sunat_error_count = row.sunat_error_count || 0;
         }),
       );
     }

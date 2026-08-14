@@ -103,6 +103,8 @@ export const createDashboardViewModel = ({ summary, hideIncome = false } = {}) =
     cashRegister: {
       today: cashRegisterSummary.today || {},
       openSession: cashRegisterSummary.open_session || {},
+      sunatPendingCount: Number(cashRegisterSummary.sunat_pending_count || 0),
+      sunatErrorCount: Number(cashRegisterSummary.sunat_error_count || 0),
       recentTransactions: cashRegisterSummary.recent_transactions || [],
     },
     paymentStatusChart,

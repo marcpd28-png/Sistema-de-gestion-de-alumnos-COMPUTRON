@@ -47,6 +47,8 @@ export default function useDashboardState({
         expected_cash_amount: '0.00',
         opened_at: null,
       },
+      sunat_pending_count: 0,
+      sunat_error_count: 0,
       recent_transactions: [],
     },
     visibility: {
