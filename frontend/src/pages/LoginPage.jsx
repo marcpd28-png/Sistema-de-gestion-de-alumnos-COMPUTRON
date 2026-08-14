@@ -1,15 +1,23 @@
-import { useState } from 'react';
-import { Navigate } from 'react-router-dom';
+import { useEffect, useState } from 'react';
 import { useAuth } from '../context/AuthContext';
+
+const getPostLoginPath = (user) => (user?.must_change_password ? '/change-password' : '/');
+
+const replaceWithFreshApp = (path) => {
+  if (typeof window === 'undefined') return;
+  window.location.replace(path);
+};
 
 export default function LoginPage() {
   const { login, loading, isAuthenticated, mustChangePassword } = useAuth();
   const [form, setForm] = useState({ email: '', password: '' });
   const [error, setError] = useState('');
 
-  if (isAuthenticated) {
-    return <Navigate to={mustChangePassword ? '/change-password' : '/'} replace />;
-  }
+  useEffect(() => {
+    if (isAuthenticated) {
+      replaceWithFreshApp(mustChangePassword ? '/change-password' : '/');
+    }
+  }, [isAuthenticated, mustChangePassword]);
 
   const handleSubmit = async (event) => {
     event.preventDefault();
@@ -18,7 +26,10 @@ export default function LoginPage() {
     const result = await login(form.email, form.password);
     if (!result.ok) {
       setError(result.message || 'Credenciales inválidas.');
+      return;
     }
+
+    replaceWithFreshApp(getPostLoginPath(result.user));
   };
 
   return (
@@ -59,13 +70,15 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            disabled={loading}
+            disabled={loading || isAuthenticated}
             className="btn-primary w-full"
           >
-            {loading ? 'Validando...' : 'Ingresar'}
+            {loading || isAuthenticated ? 'Validando...' : 'Ingresar'}
           </button>
         </form>
       </div>
     </div>
   );
 }
+
+export { getPostLoginPath };

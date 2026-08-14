@@ -124,7 +124,7 @@ export function AuthProvider({ children }) {
       });
       setAuthToken(response.data.access_token);
       syncCampusScopeForUser(response.data.user);
-      return { ok: true };
+      return { ok: true, user: response.data.user };
     } catch (error) {
       const statusCode = error?.response?.status;
       const retryAfterSeconds = Number(error?.response?.headers?.['retry-after'] || 0);
