@@ -6,12 +6,12 @@
     <title>{{DOCUMENT_TITLE}} {{DOCUMENT_NUMBER}}</title>
     <style>
       @page {
-        size: A5 portrait;
+        size: A5 landscape;
         margin: 0;
       }
 
       @page f3-a5 {
-        size: A5 portrait;
+        size: A5 landscape;
         margin: 0;
       }
 
@@ -24,17 +24,24 @@
         box-sizing: border-box;
       }
 
+      :root {
+        --f3-a5-scale: 0.7070707071;
+        --f3-a5-page-height: 148.15mm;
+      }
+
       html,
       body {
         margin: 0;
-        width: 148.5mm;
-        min-height: 210mm;
+        width: 210mm;
+        height: var(--f3-a5-page-height);
+        min-height: var(--f3-a5-page-height);
       }
 
       body {
         background: #f3f4f6;
         color: #111;
         font-family: Arial, Helvetica, sans-serif;
+        overflow: hidden;
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
       }
@@ -42,10 +49,10 @@
       .sheet {
         position: relative;
         display: grid;
-        grid-template-columns: 148.5mm;
-        width: 148.5mm;
-        height: 210mm;
-        margin: 0 auto;
+        grid-template-columns: 105mm 105mm;
+        width: 210mm;
+        height: var(--f3-a5-page-height);
+        margin: 0;
         overflow: hidden;
         background: #fff;
         page: f3-a5;
@@ -62,32 +69,49 @@
       .receipt {
         position: relative;
         z-index: 1;
-        width: 148.5mm;
-        height: 210mm;
+        width: 105mm;
+        height: var(--f3-a5-page-height);
         overflow: hidden;
       }
 
-      .duplicate-copy,
+      .receipt-content {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 148.5mm;
+        height: 210mm;
+        transform: scale(var(--f3-a5-scale));
+        transform-origin: top left;
+      }
+
+      .duplicate-copy {
+        display: block;
+      }
+
       .cut-line {
-        display: none;
+        display: inline;
       }
 
       body.paper-a4-duplicate {
         width: 297mm;
+        height: 210mm;
+        min-height: 210mm;
       }
 
       body.paper-a4-duplicate .sheet {
         grid-template-columns: 148.5mm 148.5mm;
         width: 297mm;
+        height: 210mm;
         page: f3-a4-duplicate;
       }
 
-      body.paper-a4-duplicate .duplicate-copy {
-        display: block;
+      body.paper-a4-duplicate .receipt {
+        width: 148.5mm;
+        height: 210mm;
       }
 
-      body.paper-a4-duplicate .cut-line {
-        display: inline;
+      body.paper-a4-duplicate .receipt-content {
+        transform: none;
       }
 
       .company-data {
@@ -324,20 +348,48 @@
 
       @media print {
         html,
-        body,
-        .sheet {
-          width: 148.5mm;
-          height: 210mm;
+        body {
+          width: 210mm;
+          height: var(--f3-a5-page-height);
+          min-height: var(--f3-a5-page-height);
           background: #fff;
         }
 
-        body.paper-a4-duplicate,
-        body.paper-a4-duplicate .sheet {
+        .sheet {
+          width: 210mm;
+          height: var(--f3-a5-page-height);
+          background: #fff;
+        }
+
+        .receipt-content {
+          transform: scale(var(--f3-a5-scale));
+          transform-origin: top left;
+        }
+
+        body.paper-a4-duplicate {
           width: 297mm;
+          height: 210mm;
+          min-height: 210mm;
+        }
+
+        body.paper-a4-duplicate .sheet {
+          grid-template-columns: 148.5mm 148.5mm;
+          width: 297mm;
+          height: 210mm;
+        }
+
+        body.paper-a4-duplicate .receipt {
+          width: 148.5mm;
+          height: 210mm;
+        }
+
+        body.paper-a4-duplicate .receipt-content {
+          transform: none;
         }
 
         .print-static-brand,
-        .company-data {
+        .company-data,
+        .cut-line {
           display: none;
         }
       }
@@ -377,6 +429,7 @@
       </svg>
 
       <section class="receipt">
+        <div class="receipt-content">
         <section class="company-data">
           <strong>CONSORCIO EDUCATIVO COMPUTRON S.A.C.</strong>
           <strong>R.U.C. {{RUC_NUMBER}}</strong>
@@ -449,9 +502,11 @@
           <div>Representacion Impresa del documento de venta electronica</div>
           <div>Este documento puede ser validado en {{VALIDATION_URL}}</div>
         </footer>
+        </div>
       </section>
 
       <section class="receipt duplicate-copy">
+        <div class="receipt-content">
         <section class="company-data">
           <strong>CONSORCIO EDUCATIVO COMPUTRON S.A.C.</strong>
           <strong>R.U.C. {{RUC_NUMBER}}</strong>
@@ -524,6 +579,7 @@
           <div>Representacion Impresa del documento de venta electronica</div>
           <div>Este documento puede ser validado en {{VALIDATION_URL}}</div>
         </footer>
+        </div>
       </section>
     </main>
   </body>

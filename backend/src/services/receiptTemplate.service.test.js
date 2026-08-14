@@ -22,13 +22,16 @@ const buildSampleReceipt = (paperSize) =>
     saldoAmount: 0,
   });
 
-test('usa A5 como papel predeterminado del formato Computron', () => {
+test('usa A5 doble como papel predeterminado del formato Computron', () => {
   const html = buildSampleReceipt();
 
   assert.equal(normalizeReceiptPaperSize(), 'A5');
-  assert.match(html, /<body class="paper-a5">/);
-  assert.match(html, /@page\s*\{\s*size: A5 portrait;/);
-  assert.match(html, /viewBox="0 0 148\.5 210"/);
+  assert.match(html, /<body class="paper-a5-duplicate">/);
+  assert.match(html, /@page\s*\{\s*size: A5 landscape;/);
+  assert.match(html, /viewBox="0 0 297 210"/);
+  assert.match(html, /--f3-a5-page-height:\s*148\.15mm;/);
+  assert.match(html, /\.receipt-content\s*\{[\s\S]*position:\s*absolute;[\s\S]*transform:\s*scale\(var\(--f3-a5-scale\)\)/);
+  assert.match(html, /transform:\s*scale\(var\(--f3-a5-scale\)\)/);
 });
 
 test('formatea cuotas por numero secuencial para comprobantes', () => {
@@ -42,7 +45,7 @@ test('formatea cuotas por numero secuencial para comprobantes', () => {
 test('oculta los datos preimpresos solo al imprimir y mantiene orientacion normal', () => {
   const html = buildSampleReceipt();
 
-  assert.match(html, /\.print-static-brand,\s*\.company-data\s*\{\s*display: none;/);
+  assert.match(html, /\.print-static-brand,\s*\.company-data,\s*\.cut-line\s*\{\s*display: none;/);
   assert.match(html, /class="print-static-brand" href="data:image\/png;base64,/);
   assert.match(html, /<section class="company-data">/);
   assert.doesNotMatch(html, /transform:\s*rotate\(180deg\)/);

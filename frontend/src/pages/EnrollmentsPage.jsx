@@ -67,7 +67,7 @@ const RECEIPT_FORMAT_LABELS = {
 };
 const DEFAULT_RECEIPT_PAPER_SIZE = 'A5';
 const RECEIPT_PAPER_SIZE_LABELS = {
-  A5: 'A5',
+  A5: 'A5 doble',
   A4_DUPLICATE: 'A4 doble',
 };
 

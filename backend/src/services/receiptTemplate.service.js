@@ -345,8 +345,8 @@ const buildReceiptHtml = ({
   const replacements = {
     F3_LOGO_IMAGE: escapeHtml(f3LogoImage),
     F3_WATERMARK_IMAGE: escapeHtml(f3WatermarkImage),
-    F3_PAPER_CLASS: isF3A4Duplicate ? 'paper-a4-duplicate' : 'paper-a5',
-    F3_SVG_WIDTH: isF3A4Duplicate ? '297' : '148.5',
+    F3_PAPER_CLASS: isF3A4Duplicate ? 'paper-a4-duplicate' : 'paper-a5-duplicate',
+    F3_SVG_WIDTH: '297',
     DOCUMENT_TITLE: escapeHtml(documentMetadata.title),
     DOCUMENT_TITLE_F3: escapeHtml(f3DocumentTitle),
     DOCUMENT_NUMBER: escapeHtml(documentNumber || '-'),
