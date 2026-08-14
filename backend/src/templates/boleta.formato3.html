@@ -6,6 +6,16 @@
     <title>{{DOCUMENT_TITLE}} {{DOCUMENT_NUMBER}}</title>
     <style>
       @page {
+        size: A5 portrait;
+        margin: 0;
+      }
+
+      @page f3-a5 {
+        size: A5 portrait;
+        margin: 0;
+      }
+
+      @page f3-a4-duplicate {
         size: A4 landscape;
         margin: 0;
       }
@@ -17,7 +27,7 @@
       html,
       body {
         margin: 0;
-        width: 297mm;
+        width: 148.5mm;
         min-height: 210mm;
       }
 
@@ -32,12 +42,13 @@
       .sheet {
         position: relative;
         display: grid;
-        grid-template-columns: 148.5mm 148.5mm;
-        width: 297mm;
+        grid-template-columns: 148.5mm;
+        width: 148.5mm;
         height: 210mm;
         margin: 0 auto;
         overflow: hidden;
         background: #fff;
+        page: f3-a5;
       }
 
       .format-background {
@@ -54,6 +65,29 @@
         width: 148.5mm;
         height: 210mm;
         overflow: hidden;
+      }
+
+      .duplicate-copy,
+      .cut-line {
+        display: none;
+      }
+
+      body.paper-a4-duplicate {
+        width: 297mm;
+      }
+
+      body.paper-a4-duplicate .sheet {
+        grid-template-columns: 148.5mm 148.5mm;
+        width: 297mm;
+        page: f3-a4-duplicate;
+      }
+
+      body.paper-a4-duplicate .duplicate-copy {
+        display: block;
+      }
+
+      body.paper-a4-duplicate .cut-line {
+        display: inline;
       }
 
       .company-data {
@@ -292,9 +326,14 @@
         html,
         body,
         .sheet {
-          width: 297mm;
+          width: 148.5mm;
           height: 210mm;
           background: #fff;
+        }
+
+        body.paper-a4-duplicate,
+        body.paper-a4-duplicate .sheet {
+          width: 297mm;
         }
 
         .sheet {
@@ -303,9 +342,9 @@
       }
     </style>
   </head>
-  <body>
+  <body class="{{F3_PAPER_CLASS}}">
     <main class="sheet">
-      <svg class="format-background" viewBox="0 0 297 210" preserveAspectRatio="none" aria-hidden="true">
+      <svg class="format-background" viewBox="0 0 {{F3_SVG_WIDTH}} 210" preserveAspectRatio="none" aria-hidden="true">
         <defs>
           <g id="receipt-background">
             <rect x="0.1" y="0.1" width="148.3" height="209.8" fill="#fff" stroke="#111" stroke-width="0.22" />
@@ -332,7 +371,7 @@
 
         <use href="#receipt-background" x="0" y="0" />
         <use href="#receipt-background" x="148.5" y="0" />
-        <line x1="148.5" y1="0" x2="148.5" y2="210" stroke="#ef0000" stroke-width="0.35" stroke-dasharray="1.1 1" />
+        <line class="cut-line" x1="148.5" y1="0" x2="148.5" y2="210" stroke="#ef0000" stroke-width="0.35" stroke-dasharray="1.1 1" />
       </svg>
 
       <section class="receipt">
@@ -410,7 +449,7 @@
         </footer>
       </section>
 
-      <section class="receipt">
+      <section class="receipt duplicate-copy">
         <section class="company-data">
           <strong>CONSORCIO EDUCATIVO COMPUTRON S.A.C.</strong>
           <strong>R.U.C. {{RUC_NUMBER}}</strong>

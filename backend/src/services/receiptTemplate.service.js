@@ -15,6 +15,7 @@ const receiptAssets = {
 const templateCache = new Map();
 const assetCache = new Map();
 const DEFAULT_RECEIPT_FORMAT = 'F3';
+const DEFAULT_RECEIPT_PAPER_SIZE = 'A5';
 
 const escapeHtml = (value) =>
   String(value ?? '')
@@ -53,6 +54,19 @@ const normalizeReceiptFormat = (value) => {
     .trim()
     .toUpperCase();
   return receiptTemplates[raw] ? raw : DEFAULT_RECEIPT_FORMAT;
+};
+
+const normalizeReceiptPaperSize = (value) => {
+  const raw = String(value || '')
+    .trim()
+    .toUpperCase()
+    .replaceAll('-', '_');
+
+  if (['A4', 'A4_DUPLICATE', 'A4_DOBLE', 'DUPLICATE', 'DOBLE'].includes(raw)) {
+    return 'A4_DUPLICATE';
+  }
+
+  return DEFAULT_RECEIPT_PAPER_SIZE;
 };
 
 const RECEIPT_DOCUMENT_METADATA = {
@@ -250,6 +264,7 @@ const buildQrBoxContent = (qrImageDataUrl, validationUrl) => {
 
 const buildReceiptHtml = ({
   format = DEFAULT_RECEIPT_FORMAT,
+  paperSize = DEFAULT_RECEIPT_PAPER_SIZE,
   documentType = 'BOLETA',
   documentNumber,
   issueDate,
@@ -272,6 +287,7 @@ const buildReceiptHtml = ({
   rucNumber = '20508338288',
 }) => {
   const selectedFormat = normalizeReceiptFormat(format);
+  const selectedPaperSize = normalizeReceiptPaperSize(paperSize);
   const selectedDocumentType = normalizeReceiptDocumentType(documentType);
   const documentMetadata = RECEIPT_DOCUMENT_METADATA[selectedDocumentType];
   const template = loadTemplateByFormat(selectedFormat);
@@ -296,10 +312,13 @@ const buildReceiptHtml = ({
   const f3LogoImage = selectedFormat === 'F3' ? loadAssetDataUrl(receiptAssets.F3_LOGO, 'image/png') : '';
   const f3WatermarkImage =
     selectedFormat === 'F3' ? loadAssetDataUrl(receiptAssets.F3_WATERMARK, 'image/png') : '';
+  const isF3A4Duplicate = selectedFormat === 'F3' && selectedPaperSize === 'A4_DUPLICATE';
 
   const replacements = {
     F3_LOGO_IMAGE: escapeHtml(f3LogoImage),
     F3_WATERMARK_IMAGE: escapeHtml(f3WatermarkImage),
+    F3_PAPER_CLASS: isF3A4Duplicate ? 'paper-a4-duplicate' : 'paper-a5',
+    F3_SVG_WIDTH: isF3A4Duplicate ? '297' : '148.5',
     DOCUMENT_TITLE: escapeHtml(documentMetadata.title),
     DOCUMENT_TITLE_F3: escapeHtml(f3DocumentTitle),
     DOCUMENT_NUMBER: escapeHtml(documentNumber || '-'),
@@ -361,8 +380,10 @@ const buildReceiptHtml = ({
 
 module.exports = {
   DEFAULT_RECEIPT_FORMAT,
+  DEFAULT_RECEIPT_PAPER_SIZE,
   buildReceiptHtml,
   normalizeReceiptDocumentType,
   normalizeReceiptFormat,
+  normalizeReceiptPaperSize,
   toCurrency,
 };

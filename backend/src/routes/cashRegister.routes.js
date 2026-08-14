@@ -9,9 +9,11 @@ const { authenticate, authorizePermission } = require('../middlewares/auth');
 const { parseCampusScopeId } = require('../utils/campusScope');
 const {
   DEFAULT_RECEIPT_FORMAT,
+  DEFAULT_RECEIPT_PAPER_SIZE,
   buildReceiptHtml,
   normalizeReceiptDocumentType,
   normalizeReceiptFormat,
+  normalizeReceiptPaperSize,
 } = require('../services/receiptTemplate.service');
 const { buildQrDataUrl } = require('../services/qrCode.service');
 const {
@@ -224,6 +226,7 @@ const transactionReceiptSchema = z.object({
       campus_id: z.coerce.number().int().positive().optional(),
       download: z.string().optional(),
       format: z.string().optional(),
+      paper_size: z.string().optional(),
     })
     .optional(),
 });
@@ -252,6 +255,7 @@ const transactionReceiptVerificationSchema = z.object({
     .object({
       download: z.string().optional(),
       format: z.string().optional(),
+      paper_size: z.string().optional(),
     })
     .optional(),
 });
@@ -311,19 +315,23 @@ const buildFrontendAwareAbsoluteUrl = (req, relativePath) => {
   return `${getRequestProtocol(req)}://${host}${normalizedRelativePath}`;
 };
 
-const buildReceiptVerificationPath = (receiptToken, format) => {
+const buildReceiptVerificationPath = (receiptToken, format, paperSize) => {
   const normalizedToken = encodeURIComponent(String(receiptToken || '').trim());
   const searchParams = new URLSearchParams();
   const normalizedFormat = normalizeReceiptFormat(format);
   if (normalizedFormat !== DEFAULT_RECEIPT_FORMAT) {
     searchParams.set('format', normalizedFormat);
   }
+  const normalizedPaperSize = normalizeReceiptPaperSize(paperSize);
+  if (normalizedPaperSize !== DEFAULT_RECEIPT_PAPER_SIZE) {
+    searchParams.set('paper_size', normalizedPaperSize);
+  }
   const queryString = searchParams.toString();
   return `/api/cash-register/verify/${normalizedToken}${queryString ? `?${queryString}` : ''}`;
 };
 
-const buildReceiptVerificationUrl = (req, receiptToken, format) =>
-  buildFrontendAwareAbsoluteUrl(req, buildReceiptVerificationPath(receiptToken, format));
+const buildReceiptVerificationUrl = (req, receiptToken, format, paperSize) =>
+  buildFrontendAwareAbsoluteUrl(req, buildReceiptVerificationPath(receiptToken, format, paperSize));
 
 const toDownloadFlag = (value) => {
   const normalized = String(value || '').trim().toLowerCase();
@@ -586,12 +594,12 @@ const updateSunatSubmission = async ({
   return rows[0];
 };
 
-const buildTransactionReceiptHtml = async ({ req, transaction, detailRows, format }) => {
+const buildTransactionReceiptHtml = async ({ req, transaction, detailRows, format, paperSize }) => {
   const documentType = normalizeReceiptDocumentType(transaction.receipt_document_type);
   const documentPrefix = RECEIPT_DOCUMENT_PREFIXES[documentType];
   const isInvoice = documentType === 'FACTURA';
   const rawReceiptToken = decryptReceiptToken(transaction.receipt_token);
-  const verificationUrl = buildReceiptVerificationUrl(req, rawReceiptToken, format);
+  const verificationUrl = buildReceiptVerificationUrl(req, rawReceiptToken, format, paperSize);
   let qrImageDataUrl = '';
 
   try {
@@ -614,6 +622,7 @@ const buildTransactionReceiptHtml = async ({ req, transaction, detailRows, forma
 
   return buildReceiptHtml({
     format: normalizeReceiptFormat(format),
+    paperSize: normalizeReceiptPaperSize(paperSize),
     documentType,
     documentNumber: transaction.sunat_document_number || internalDocumentNumber,
     issueDate: transaction.created_at,
@@ -714,6 +723,7 @@ router.get(
   asyncHandler(async (req, res) => {
     const receiptToken = String(req.validated.params.token || '').trim().toLowerCase();
     const receiptFormat = normalizeReceiptFormat(req.validated.query?.format);
+    const receiptPaperSize = normalizeReceiptPaperSize(req.validated.query?.paper_size);
     const shouldDownload = toDownloadFlag(req.validated.query?.download);
 
     const receiptContext = await getTransactionReceiptContextByToken({ receiptToken });
@@ -727,6 +737,7 @@ router.get(
       transaction,
       detailRows,
       format: receiptFormat,
+      paperSize: receiptPaperSize,
     });
     const fileName = `comprobante_caja_${transaction.id}.html`;
 
@@ -1347,6 +1358,7 @@ router.get(
     const campusScopeId = parseCampusScopeId(req);
     const shouldDownload = toDownloadFlag(req.validated.query?.download);
     const receiptFormat = normalizeReceiptFormat(req.validated.query?.format);
+    const receiptPaperSize = normalizeReceiptPaperSize(req.validated.query?.paper_size);
 
     const receiptContext = await getTransactionReceiptContextById({ transactionId, campusScopeId });
     if (!receiptContext) {
@@ -1359,6 +1371,7 @@ router.get(
       transaction,
       detailRows,
       format: receiptFormat,
+      paperSize: receiptPaperSize,
     });
     const fileName = `comprobante_caja_${transaction.id}.html`;
 

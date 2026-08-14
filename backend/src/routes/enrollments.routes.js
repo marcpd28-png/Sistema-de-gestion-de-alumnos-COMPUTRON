@@ -8,8 +8,10 @@ const { authenticate, authorizePermission } = require('../middlewares/auth');
 const { parseCampusScopeId } = require('../utils/campusScope');
 const { resolveEnrollmentScheduleInfo } = require('../utils/scheduleBlocks');
 const {
+  DEFAULT_RECEIPT_PAPER_SIZE,
   buildReceiptHtml,
   normalizeReceiptFormat,
+  normalizeReceiptPaperSize,
 } = require('../services/receiptTemplate.service');
 
 const router = express.Router();
@@ -67,6 +69,7 @@ const enrollmentReceiptSchema = z.object({
       campus_id: z.coerce.number().int().positive().optional(),
       download: z.string().optional(),
       format: z.string().optional(),
+      paper_size: z.string().optional(),
     })
     .optional(),
 });
@@ -566,6 +569,7 @@ router.get(
       .toLowerCase();
     const shouldDownload = rawDownload === '1' || rawDownload === 'true' || rawDownload === 'si';
     const receiptFormat = normalizeReceiptFormat(req.validated.query?.format);
+    const receiptPaperSize = normalizeReceiptPaperSize(req.validated.query?.paper_size || DEFAULT_RECEIPT_PAPER_SIZE);
 
     const enrollmentResult = await query(
       `SELECT
@@ -642,6 +646,7 @@ router.get(
 
     const html = buildReceiptHtml({
       format: receiptFormat,
+      paperSize: receiptPaperSize,
       documentNumber: `BM-${String(enrollment.id).padStart(7, '0')}`,
       issueDate: enrollment.enrollment_date || enrollment.created_at,
       classroomLabel: [

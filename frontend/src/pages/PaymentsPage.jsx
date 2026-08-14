@@ -32,9 +32,14 @@ const RECEIPT_DOCUMENT_TYPE_LABELS = {
 
 const DEFAULT_RECEIPT_FORMAT = 'F3';
 const RECEIPT_FORMAT_LABELS = {
-  F3: 'Doble horizontal',
+  F3: 'Computron',
   F2: 'A4 simple',
   F1: 'Ticket',
+};
+const DEFAULT_RECEIPT_PAPER_SIZE = 'A5';
+const RECEIPT_PAPER_SIZE_LABELS = {
+  A5: 'A5',
+  A4_DUPLICATE: 'A4 doble',
 };
 
 const ALL_PENDING_INSTALLMENTS = 'ALL';
@@ -181,6 +186,7 @@ function StaffPaymentsPage() {
 
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [receiptFormat, setReceiptFormat] = useState(DEFAULT_RECEIPT_FORMAT);
+  const [receiptPaperSize, setReceiptPaperSize] = useState(DEFAULT_RECEIPT_PAPER_SIZE);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -554,7 +560,10 @@ function StaffPaymentsPage() {
   };
 
   const openPaymentReceipt = useCallback(
-    async (paymentId, { silent = false, format = receiptFormat, autoPrint = false } = {}) => {
+    async (
+      paymentId,
+      { silent = false, format = receiptFormat, paperSize = receiptPaperSize, autoPrint = false } = {},
+    ) => {
       if (!paymentId) return;
 
       const receiptWindow = openReceiptWindow('Comprobante de pago');
@@ -567,7 +576,7 @@ function StaffPaymentsPage() {
 
       try {
         const response = await api.get(`/payments/${paymentId}/receipt`, {
-          params: { format },
+          params: { format, paper_size: paperSize },
         });
         renderReceiptWindow(receiptWindow, response.data || '');
 
@@ -588,7 +597,7 @@ function StaffPaymentsPage() {
         }
       }
     },
-    [receiptFormat],
+    [receiptFormat, receiptPaperSize],
   );
 
   const openPaymentEvidence = useCallback(
@@ -674,6 +683,7 @@ function StaffPaymentsPage() {
         '/payments/receipt-preview',
         {
           format: receiptFormat,
+          paper_size: receiptPaperSize,
           receipt_document_type: form.receipt_document_type,
           billing_name: form.billing_name.trim() || null,
           billing_document: form.billing_document.trim() || null,
@@ -827,6 +837,7 @@ function StaffPaymentsPage() {
         await openPaymentReceipt(firstCreatedPaymentId, {
           silent: true,
           format: receiptFormat,
+          paperSize: receiptPaperSize,
           autoPrint: shouldPrintReceipt,
         });
       }
@@ -1141,6 +1152,19 @@ function StaffPaymentsPage() {
               aria-label="Diseño del comprobante"
             >
               {Object.entries(RECEIPT_FORMAT_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="app-input"
+              value={receiptPaperSize}
+              onChange={(event) => setReceiptPaperSize(event.target.value)}
+              aria-label="Tamaño de papel"
+            >
+              {Object.entries(RECEIPT_PAPER_SIZE_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>

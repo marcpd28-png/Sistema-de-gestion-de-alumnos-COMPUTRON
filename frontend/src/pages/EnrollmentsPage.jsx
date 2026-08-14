@@ -61,9 +61,14 @@ const getScheduleBlocks = (scheduleInfo) =>
 
 const DEFAULT_RECEIPT_FORMAT = 'F3';
 const RECEIPT_FORMAT_LABELS = {
-  F3: 'Boleta doble horizontal',
+  F3: 'Boleta Computron',
   F2: 'Boleta A4 simple',
   F1: 'Boleta ticketera',
+};
+const DEFAULT_RECEIPT_PAPER_SIZE = 'A5';
+const RECEIPT_PAPER_SIZE_LABELS = {
+  A5: 'A5',
+  A4_DUPLICATE: 'A4 doble',
 };
 
 export default function EnrollmentsPage() {
@@ -85,6 +90,7 @@ export default function EnrollmentsPage() {
   const [showInstallmentForm, setShowInstallmentForm] = useState(false);
   const [showPeriodForm, setShowPeriodForm] = useState(false);
   const [receiptFormat, setReceiptFormat] = useState(DEFAULT_RECEIPT_FORMAT);
+  const [receiptPaperSize, setReceiptPaperSize] = useState(DEFAULT_RECEIPT_PAPER_SIZE);
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
 
@@ -234,12 +240,15 @@ export default function EnrollmentsPage() {
     }
   };
 
-  const openEnrollmentReceipt = async (enrollmentId, { silent = false, format = receiptFormat } = {}) => {
+  const openEnrollmentReceipt = async (
+    enrollmentId,
+    { silent = false, format = receiptFormat, paperSize = receiptPaperSize } = {},
+  ) => {
     if (!enrollmentId) return;
 
     try {
       const response = await api.get(`/enrollments/${enrollmentId}/receipt`, {
-        params: { format },
+        params: { format, paper_size: paperSize },
         responseType: 'text',
       });
 
@@ -288,7 +297,11 @@ export default function EnrollmentsPage() {
       await loadData();
 
       if (createdEnrollmentId) {
-        await openEnrollmentReceipt(createdEnrollmentId, { silent: true, format: receiptFormat });
+        await openEnrollmentReceipt(createdEnrollmentId, {
+          silent: true,
+          format: receiptFormat,
+          paperSize: receiptPaperSize,
+        });
       }
     } catch (requestError) {
       setError(requestError.response?.data?.message || requestError.message || 'No se pudo crear la matricula.');
@@ -355,7 +368,11 @@ export default function EnrollmentsPage() {
       await loadData();
 
       if (createdEnrollmentId) {
-        await openEnrollmentReceipt(createdEnrollmentId, { silent: true, format: receiptFormat });
+        await openEnrollmentReceipt(createdEnrollmentId, {
+          silent: true,
+          format: receiptFormat,
+          paperSize: receiptPaperSize,
+        });
       }
     } catch (requestError) {
       setError(requestError.response?.data?.message || requestError.message || 'No se pudo registrar la matrícula completa.');
@@ -484,6 +501,19 @@ export default function EnrollmentsPage() {
               onChange={(event) => setReceiptFormat(event.target.value)}
             >
               {Object.entries(RECEIPT_FORMAT_LABELS).map(([value, label]) => (
+                <option key={value} value={value}>
+                  {label}
+                </option>
+              ))}
+            </select>
+
+            <select
+              className="app-input w-full sm:min-w-[120px]"
+              value={receiptPaperSize}
+              onChange={(event) => setReceiptPaperSize(event.target.value)}
+              aria-label="Tamaño de papel"
+            >
+              {Object.entries(RECEIPT_PAPER_SIZE_LABELS).map(([value, label]) => (
                 <option key={value} value={value}>
                   {label}
                 </option>

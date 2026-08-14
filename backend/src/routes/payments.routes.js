@@ -12,9 +12,11 @@ const { authenticate, authorizePermission } = require('../middlewares/auth');
 const { parseCampusScopeId } = require('../utils/campusScope');
 const {
   DEFAULT_RECEIPT_FORMAT,
+  DEFAULT_RECEIPT_PAPER_SIZE,
   buildReceiptHtml,
   normalizeReceiptDocumentType,
   normalizeReceiptFormat,
+  normalizeReceiptPaperSize,
 } = require('../services/receiptTemplate.service');
 const { buildQrDataUrl } = require('../services/qrCode.service');
 const {
@@ -227,6 +229,7 @@ const paymentReceiptSchema = z.object({
       campus_id: z.coerce.number().int().positive().optional(),
       download: z.string().optional(),
       format: z.string().optional(),
+      paper_size: z.string().optional(),
     })
     .optional(),
 });
@@ -256,6 +259,7 @@ const paymentReceiptVerificationSchema = z.object({
     .object({
       download: z.string().optional(),
       format: z.string().optional(),
+      paper_size: z.string().optional(),
     })
     .optional(),
 });
@@ -264,6 +268,7 @@ const paymentReceiptPreviewSchema = z.object({
   body: z
     .object({
       format: z.string().optional(),
+      paper_size: z.string().optional(),
       receipt_document_type: z.enum(RECEIPT_DOCUMENT_TYPES).optional().default('BOLETA'),
       billing_name: nullableTrimmedText({ max: 180 }),
       billing_document: nullableTrimmedText({ max: 20 }),
@@ -420,19 +425,23 @@ const sendProtectedEvidenceFile = (res, { filePath, fileName, download = false }
 
 const generateReceiptToken = () => crypto.randomBytes(16).toString('hex');
 
-const buildReceiptVerificationPath = (receiptToken, format) => {
+const buildReceiptVerificationPath = (receiptToken, format, paperSize) => {
   const normalizedToken = encodeURIComponent(String(receiptToken || '').trim());
   const searchParams = new URLSearchParams();
   const normalizedFormat = normalizeReceiptFormat(format);
   if (normalizedFormat !== DEFAULT_RECEIPT_FORMAT) {
     searchParams.set('format', normalizedFormat);
   }
+  const normalizedPaperSize = normalizeReceiptPaperSize(paperSize);
+  if (normalizedPaperSize !== DEFAULT_RECEIPT_PAPER_SIZE) {
+    searchParams.set('paper_size', normalizedPaperSize);
+  }
   const queryString = searchParams.toString();
   return `/api/payments/verify/${normalizedToken}${queryString ? `?${queryString}` : ''}`;
 };
 
-const buildReceiptVerificationUrl = (req, receiptToken, format) => {
-  const relativePath = buildReceiptVerificationPath(receiptToken, format);
+const buildReceiptVerificationUrl = (req, receiptToken, format, paperSize) => {
+  const relativePath = buildReceiptVerificationPath(receiptToken, format, paperSize);
   return buildFrontendAwareAbsoluteUrl(req, relativePath);
 };
 
@@ -553,12 +562,12 @@ const getReceiptSnapshotByToken = async ({ receiptToken }) => {
   return snapshotResult.rows[0];
 };
 
-const buildPaymentReceiptHtml = async ({ req, payment, detailRows, format }) => {
+const buildPaymentReceiptHtml = async ({ req, payment, detailRows, format, paperSize }) => {
   const documentType = normalizeReceiptDocumentType(payment.receipt_document_type);
   const documentPrefix = RECEIPT_DOCUMENT_PREFIXES[documentType];
   const isInvoice = documentType === 'FACTURA';
   const rawReceiptToken = decryptReceiptToken(payment.receipt_token);
-  const verificationUrl = buildReceiptVerificationUrl(req, rawReceiptToken, format);
+  const verificationUrl = buildReceiptVerificationUrl(req, rawReceiptToken, format, paperSize);
   let qrImageDataUrl = '';
   try {
     qrImageDataUrl = await buildQrDataUrl(verificationUrl, { width: 180, margin: 1 });
@@ -568,6 +577,7 @@ const buildPaymentReceiptHtml = async ({ req, payment, detailRows, format }) => 
 
   return buildReceiptHtml({
     format: normalizeReceiptFormat(format),
+    paperSize: normalizeReceiptPaperSize(paperSize),
     documentType,
     documentNumber: `${documentPrefix}-${String(payment.id).padStart(7, '0')}`,
     issueDate: payment.payment_date || payment.created_at,
@@ -687,6 +697,7 @@ router.get(
       .trim()
       .toLowerCase();
     const receiptFormat = normalizeReceiptFormat(req.validated.query?.format);
+    const receiptPaperSize = normalizeReceiptPaperSize(req.validated.query?.paper_size);
     const shouldDownload = toDownloadFlag(req.validated.query?.download);
 
     const receiptContext = await getPaymentReceiptContextByToken({ receiptToken });
@@ -697,6 +708,7 @@ router.get(
         payment,
         detailRows,
         format: receiptFormat,
+        paperSize: receiptPaperSize,
       });
       const fileName = `comprobante_pago_${payment.id}.html`;
 
@@ -1215,6 +1227,7 @@ router.post(
       enrollment_id: enrollmentId = null,
       amount_received: amountReceived = null,
       issue_date: issueDate = null,
+      paper_size: paperSize = DEFAULT_RECEIPT_PAPER_SIZE,
       details = [],
     } = req.validated.body;
 
@@ -1278,7 +1291,7 @@ router.post(
     const previewRawToken = generateReceiptToken();
     const previewTokenHash = hashReceiptToken(previewRawToken);
     const previewEncryptedToken = encryptReceiptToken(previewRawToken);
-    const previewVerificationUrl = buildReceiptVerificationUrl(req, previewRawToken, format);
+    const previewVerificationUrl = buildReceiptVerificationUrl(req, previewRawToken, format, paperSize);
     let previewQrImageDataUrl = '';
     try {
       previewQrImageDataUrl = await buildQrDataUrl(previewVerificationUrl, { width: 180, margin: 1 });
@@ -1288,6 +1301,7 @@ router.post(
 
     const html = buildReceiptHtml({
       format: normalizeReceiptFormat(format),
+      paperSize: normalizeReceiptPaperSize(paperSize),
       documentType: normalizedDocumentType,
       documentNumber: `${documentPrefix}-PREVIEW`,
       issueDate: issueDate || new Date().toISOString(),
@@ -1336,6 +1350,7 @@ router.get(
     const campusScopeId = parseCampusScopeId(req);
     const shouldDownload = toDownloadFlag(req.validated.query?.download);
     const receiptFormat = normalizeReceiptFormat(req.validated.query?.format);
+    const receiptPaperSize = normalizeReceiptPaperSize(req.validated.query?.paper_size);
 
     const receiptContext = await getPaymentReceiptContextById({ paymentId, campusScopeId });
     if (!receiptContext) {
@@ -1348,6 +1363,7 @@ router.get(
       payment,
       detailRows,
       format: receiptFormat,
+      paperSize: receiptPaperSize,
     });
 
     const fileName = `comprobante_pago_${payment.id}.html`;

@@ -54,9 +54,14 @@ const RECEIPT_DOCUMENT_TYPE_LABELS = {
 
 const DEFAULT_RECEIPT_FORMAT = 'F3';
 const RECEIPT_FORMAT_LABELS = {
-  F3: 'Doble horizontal',
+  F3: 'Computron',
   F2: 'A4 simple',
   F1: 'Ticket',
+};
+const DEFAULT_RECEIPT_PAPER_SIZE = 'A5';
+const RECEIPT_PAPER_SIZE_LABELS = {
+  A5: 'A5',
+  A4_DUPLICATE: 'A4 doble',
 };
 
 const SUNAT_STATUS_LABELS = {
@@ -216,6 +221,7 @@ export default function CashRegisterPage() {
   const [visibleCount, setVisibleCount] = useState(CASH_INITIAL_LIMIT);
   const [hasMoreTransactions, setHasMoreTransactions] = useState(false);
   const [receiptFormat, setReceiptFormat] = useState(DEFAULT_RECEIPT_FORMAT);
+  const [receiptPaperSize, setReceiptPaperSize] = useState(DEFAULT_RECEIPT_PAPER_SIZE);
   const [showServiceEditor, setShowServiceEditor] = useState(false);
   const [openingAmount, setOpeningAmount] = useState('0.00');
   const [openingNotes, setOpeningNotes] = useState('');
@@ -633,7 +639,14 @@ export default function CashRegisterPage() {
   const openCashReceipt = useCallback(
     async (
       transactionId,
-      { silent = false, format = receiptFormat, autoPrint = false, targetWindow = null, campusId = null } = {},
+      {
+        silent = false,
+        format = receiptFormat,
+        paperSize = receiptPaperSize,
+        autoPrint = false,
+        targetWindow = null,
+        campusId = null,
+      } = {},
     ) => {
       if (!transactionId) return;
 
@@ -649,6 +662,7 @@ export default function CashRegisterPage() {
         const response = await api.get(`/cash-register/transactions/${transactionId}/receipt`, {
           params: {
             format,
+            paper_size: paperSize,
             campus_id: campusId || undefined,
           },
         });
@@ -672,7 +686,7 @@ export default function CashRegisterPage() {
         }
       }
     },
-    [receiptFormat],
+    [receiptFormat, receiptPaperSize],
   );
 
   const submitSale = async (event) => {
@@ -773,6 +787,7 @@ export default function CashRegisterPage() {
         await openCashReceipt(transactionId, {
           silent: false,
           format: receiptFormat,
+          paperSize: receiptPaperSize,
           autoPrint: shouldPrintReceipt,
           targetWindow: receiptWindow,
           campusId: cashCampusId,
@@ -961,9 +976,21 @@ export default function CashRegisterPage() {
             onChange={(event) => setReceiptFormat(event.target.value)}
             aria-label="Diseño de comprobante"
           >
-            <option value="F3">Doble horizontal</option>
+            <option value="F3">Computron</option>
             <option value="F2">A4 simple</option>
             <option value="F1">Ticket</option>
+          </select>
+          <select
+            className="app-input app-input-compact"
+            value={receiptPaperSize}
+            onChange={(event) => setReceiptPaperSize(event.target.value)}
+            aria-label="Tamaño de papel"
+          >
+            {Object.entries(RECEIPT_PAPER_SIZE_LABELS).map(([value, label]) => (
+              <option key={value} value={value}>
+                {label}
+              </option>
+            ))}
           </select>
           {canManageCash ? (
             <button
@@ -1059,7 +1086,10 @@ export default function CashRegisterPage() {
               <div className="space-y-3">
                 <div className="metric-tile bg-white">
                   <p className="metric-label">Comprobante</p>
-                  <p className="metric-value">{RECEIPT_FORMAT_LABELS[receiptFormat] || 'Doble horizontal'}</p>
+                  <p className="metric-value">
+                    {RECEIPT_FORMAT_LABELS[receiptFormat] || 'Computron'} ·{' '}
+                    {RECEIPT_PAPER_SIZE_LABELS[receiptPaperSize] || 'A5'}
+                  </p>
                 </div>
                 <div className="metric-tile bg-white">
                   <p className="metric-label">SUNAT</p>
