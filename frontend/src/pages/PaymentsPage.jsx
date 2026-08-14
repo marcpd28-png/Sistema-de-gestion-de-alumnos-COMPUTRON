@@ -75,6 +75,29 @@ const toReceiptDocumentTypeLabel = (documentType) => {
   return RECEIPT_DOCUMENT_TYPE_LABELS[key] || documentType || 'Comprobante';
 };
 
+const formatInstallmentReceiptLabel = (installmentNumber, fallbackId = null) => {
+  const number = Number(installmentNumber || 0);
+  const suffixByNumber = {
+    1: 'RA',
+    2: 'DA',
+    3: 'RA',
+    4: 'TA',
+    5: 'TA',
+    6: 'TA',
+    7: 'MA',
+    8: 'VA',
+    9: 'NA',
+    10: 'MA',
+  };
+
+  if (Number.isInteger(number) && number > 0) {
+    return `${number}${suffixByNumber[number] || 'TA'} CUOTA`;
+  }
+
+  const fallback = Number(fallbackId || 0);
+  return Number.isInteger(fallback) && fallback > 0 ? `CUOTA ${fallback}` : 'CUOTA';
+};
+
 const round2 = (value) => Number((Number(value) || 0).toFixed(2));
 
 const yieldToBrowser = () =>
@@ -238,10 +261,10 @@ function StaffPaymentsPage() {
   const pendingInstallmentOptions = useMemo(() => {
     return (pendingSummary.items || []).map((item) => {
       const dueDate = item.due_date ? ` | Vence: ${item.due_date}` : '';
-      const concept = item.concept_name ? ` (${item.concept_name})` : '';
+      const installmentLabel = formatInstallmentReceiptLabel(item.installment_number, item.installment_id);
       return {
         id: String(item.installment_id),
-        label: `Cuota #${item.installment_id}${concept} - S/ ${round2(item.pending_amount).toFixed(2)}${dueDate}`,
+        label: `${installmentLabel} - S/ ${round2(item.pending_amount).toFixed(2)}${dueDate}`,
         amount: round2(item.pending_amount),
       };
     });
@@ -649,9 +672,7 @@ function StaffPaymentsPage() {
     const previewDetails = allocationDetails
       .map((detail) => {
         const pendingItem = pendingByInstallment.get(Number(detail.installment_id));
-        const description = pendingItem?.concept_name
-          ? `${pendingItem.concept_name} (Cuota ${detail.installment_id})`
-          : `Cuota ${detail.installment_id}`;
+        const description = formatInstallmentReceiptLabel(pendingItem?.installment_number, detail.installment_id);
         return {
           description,
           amount: round2(detail.amount),
@@ -1305,7 +1326,7 @@ function StaffPaymentsPage() {
                           {item.course_name} - {item.campus_name}
                         </td>
                         <td className="py-2 pr-3">
-                          #{item.installment_id} {item.concept_name ? `(${item.concept_name})` : ''}
+                          {formatInstallmentReceiptLabel(item.installment_number, item.installment_id)}
                         </td>
                         <td className="py-2 pr-3">{item.due_date}</td>
                         <td className="py-2 pr-3">S/ {round2(item.pending_amount).toFixed(2)}</td>

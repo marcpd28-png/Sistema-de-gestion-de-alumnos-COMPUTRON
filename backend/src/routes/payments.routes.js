@@ -14,6 +14,7 @@ const {
   DEFAULT_RECEIPT_FORMAT,
   DEFAULT_RECEIPT_PAPER_SIZE,
   buildReceiptHtml,
+  formatInstallmentReceiptLabel,
   normalizeReceiptDocumentType,
   normalizeReceiptFormat,
   normalizeReceiptPaperSize,
@@ -453,7 +454,7 @@ const toDownloadFlag = (value) => {
 const mapPaymentDetailRows = (payment, detailsResultRows = []) => {
   if (detailsResultRows.length > 0) {
     return detailsResultRows.map((detail) => ({
-      description: detail.concept_name || `Cuota #${detail.installment_id}`,
+      description: formatInstallmentReceiptLabel(detail.installment_number, detail.installment_id),
       quantity: 1,
       unit_price: Number(detail.amount || 0),
       total: Number(detail.amount || 0),
@@ -513,14 +514,24 @@ const getPaymentReceiptContextBySqlFilter = async ({ whereSql, whereParams }) =>
 
   const payment = paymentResult.rows[0];
   const detailsResult = await query(
-    `SELECT
+    `WITH numbered_installments AS (
+       SELECT
+         i.*,
+         ROW_NUMBER() OVER (
+           PARTITION BY i.enrollment_id
+           ORDER BY i.due_date ASC NULLS LAST, i.id ASC
+         )::int AS installment_number
+       FROM installments i
+     )
+     SELECT
        pd.amount,
        i.id AS installment_id,
+       i.installment_number,
        i.due_date,
        i.description,
        pc.name AS concept_name
      FROM payment_details pd
-     JOIN installments i ON i.id = pd.installment_id
+     JOIN numbered_installments i ON i.id = pd.installment_id
      LEFT JOIN payment_concepts pc ON pc.id = i.concept_id
      WHERE pd.payment_id = $1
      ORDER BY i.due_date ASC NULLS LAST, i.id ASC`,
@@ -913,12 +924,22 @@ router.get(
     }
 
     const { rows } = await query(
-      `SELECT
+      `WITH numbered_installments AS (
+         SELECT
+           i.*,
+           ROW_NUMBER() OVER (
+             PARTITION BY i.enrollment_id
+             ORDER BY i.due_date ASC NULLS LAST, i.id ASC
+           )::int AS installment_number
+         FROM installments i
+       )
+       SELECT
          e.id AS enrollment_id,
          e.status AS enrollment_status,
          c.name AS course_name,
          cp.name AS campus_name,
          i.id AS installment_id,
+         i.installment_number,
          i.due_date,
          i.total_amount,
          i.paid_amount,
@@ -930,7 +951,7 @@ router.get(
        JOIN course_campus cc ON cc.id = e.course_campus_id
        JOIN courses c ON c.id = cc.course_id
        JOIN campuses cp ON cp.id = cc.campus_id
-       JOIN installments i ON i.enrollment_id = e.id
+       JOIN numbered_installments i ON i.enrollment_id = e.id
        LEFT JOIN payment_concepts pc ON pc.id = i.concept_id
        WHERE e.student_id = $1
          AND e.status <> 'CANCELED'

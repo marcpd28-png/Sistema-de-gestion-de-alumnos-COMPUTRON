@@ -10,6 +10,7 @@ const { resolveEnrollmentScheduleInfo } = require('../utils/scheduleBlocks');
 const {
   DEFAULT_RECEIPT_PAPER_SIZE,
   buildReceiptHtml,
+  formatInstallmentReceiptLabel,
   normalizeReceiptFormat,
   normalizeReceiptPaperSize,
 } = require('../services/receiptTemplate.service');
@@ -542,6 +543,7 @@ router.get(
          pc.name AS concept,
          i.description,
          i.due_date,
+         ROW_NUMBER() OVER (ORDER BY i.due_date ASC NULLS LAST, i.id ASC)::int AS installment_number,
          i.total_amount,
          i.paid_amount,
          i.status,
@@ -609,6 +611,7 @@ router.get(
       `SELECT
          i.id,
          i.due_date,
+         ROW_NUMBER() OVER (ORDER BY i.due_date ASC NULLS LAST, i.id ASC)::int AS installment_number,
          i.total_amount,
          i.paid_amount,
          i.status,
@@ -629,7 +632,7 @@ router.get(
     const detailRows = hasInstallments
       ? installmentsResult.rows.map((installment) => {
           return {
-            description: installment.concept_name || `Cuota #${installment.id}`,
+            description: formatInstallmentReceiptLabel(installment.installment_number, installment.id),
             quantity: 1,
             unit_price: Number(installment.total_amount || 0),
             total: Number(installment.total_amount || 0),

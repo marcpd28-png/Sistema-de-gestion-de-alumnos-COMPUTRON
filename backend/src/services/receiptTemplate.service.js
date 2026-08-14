@@ -69,6 +69,34 @@ const normalizeReceiptPaperSize = (value) => {
   return DEFAULT_RECEIPT_PAPER_SIZE;
 };
 
+const formatInstallmentOrdinal = (value) => {
+  const number = Number(value || 0);
+  if (!Number.isInteger(number) || number <= 0) return '';
+
+  const suffixByNumber = {
+    1: 'RA',
+    2: 'DA',
+    3: 'RA',
+    4: 'TA',
+    5: 'TA',
+    6: 'TA',
+    7: 'MA',
+    8: 'VA',
+    9: 'NA',
+    10: 'MA',
+  };
+
+  return `${number}${suffixByNumber[number] || 'TA'}`;
+};
+
+const formatInstallmentReceiptLabel = (installmentNumber, fallbackId = null) => {
+  const ordinal = formatInstallmentOrdinal(installmentNumber);
+  if (ordinal) return `${ordinal} CUOTA`;
+
+  const fallback = Number(fallbackId || 0);
+  return Number.isInteger(fallback) && fallback > 0 ? `CUOTA ${fallback}` : 'CUOTA';
+};
+
 const RECEIPT_DOCUMENT_METADATA = {
   BOLETA: {
     title: 'Boleta de venta',
@@ -382,6 +410,7 @@ module.exports = {
   DEFAULT_RECEIPT_FORMAT,
   DEFAULT_RECEIPT_PAPER_SIZE,
   buildReceiptHtml,
+  formatInstallmentReceiptLabel,
   normalizeReceiptDocumentType,
   normalizeReceiptFormat,
   normalizeReceiptPaperSize,

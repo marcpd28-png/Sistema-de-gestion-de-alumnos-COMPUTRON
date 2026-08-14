@@ -2,6 +2,7 @@ const assert = require('node:assert/strict');
 const test = require('node:test');
 const {
   buildReceiptHtml,
+  formatInstallmentReceiptLabel,
   normalizeReceiptPaperSize,
 } = require('./receiptTemplate.service');
 
@@ -28,6 +29,14 @@ test('usa A5 como papel predeterminado del formato Computron', () => {
   assert.match(html, /<body class="paper-a5">/);
   assert.match(html, /@page\s*\{\s*size: A5 portrait;/);
   assert.match(html, /viewBox="0 0 148\.5 210"/);
+});
+
+test('formatea cuotas por numero secuencial para comprobantes', () => {
+  assert.equal(formatInstallmentReceiptLabel(1, 91), '1RA CUOTA');
+  assert.equal(formatInstallmentReceiptLabel(2, 92), '2DA CUOTA');
+  assert.equal(formatInstallmentReceiptLabel(3, 93), '3RA CUOTA');
+  assert.equal(formatInstallmentReceiptLabel(4, 94), '4TA CUOTA');
+  assert.equal(formatInstallmentReceiptLabel(null, 94), 'CUOTA 94');
 });
 
 test('oculta los datos preimpresos solo al imprimir y mantiene orientacion normal', () => {
