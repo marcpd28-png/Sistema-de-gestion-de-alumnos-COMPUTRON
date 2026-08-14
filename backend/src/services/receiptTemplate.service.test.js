@@ -30,6 +30,15 @@ test('usa A5 como papel predeterminado del formato Computron', () => {
   assert.match(html, /viewBox="0 0 148\.5 210"/);
 });
 
+test('oculta los datos preimpresos solo al imprimir y mantiene orientacion normal', () => {
+  const html = buildSampleReceipt();
+
+  assert.match(html, /\.print-static-brand,\s*\.company-data\s*\{\s*display: none;/);
+  assert.match(html, /class="print-static-brand" href="data:image\/png;base64,/);
+  assert.match(html, /<section class="company-data">/);
+  assert.doesNotMatch(html, /transform:\s*rotate\(180deg\)/);
+});
+
 test('mantiene el modo A4 doble bajo parametro explicito', () => {
   const html = buildSampleReceipt('A4_DUPLICATE');
 

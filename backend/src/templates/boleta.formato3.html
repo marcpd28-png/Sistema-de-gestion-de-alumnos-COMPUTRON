@@ -336,8 +336,9 @@
           width: 297mm;
         }
 
-        .sheet {
-          transform: rotate(180deg);
+        .print-static-brand,
+        .company-data {
+          display: none;
         }
       }
     </style>
@@ -349,14 +350,15 @@
           <g id="receipt-background">
             <rect x="0.1" y="0.1" width="148.3" height="209.8" fill="#fff" stroke="#111" stroke-width="0.22" />
 
-            <image href="{{F3_LOGO_IMAGE}}" x="4.3" y="0.5" width="70.5" height="26.1" preserveAspectRatio="xMinYMin meet" />
-            <text x="39.6" y="27.7" fill="#3f4650" font-family="Arial, Helvetica, sans-serif" font-size="2.3" font-style="italic" text-anchor="middle">Tu mejor alternativa</text>
-            <text x="39.6" y="30.3" fill="#3f4650" font-family="Arial, Helvetica, sans-serif" font-size="1.95" text-anchor="middle">en sistemas</text>
-            <rect x="58.1" y="24.8" width="2.2" height="2.2" fill="#8ea1a0" />
-            <rect x="62" y="24.1" width="2.5" height="2.5" fill="#2563eb" />
-            <rect x="62" y="27.7" width="2.5" height="2.5" fill="#65c7e8" />
+            <image class="print-static-brand" href="{{F3_LOGO_IMAGE}}" x="4.3" y="0.5" width="70.5" height="26.1" preserveAspectRatio="xMinYMin meet" />
+            <text class="print-static-brand" x="39.6" y="27.7" fill="#3f4650" font-family="Arial, Helvetica, sans-serif" font-size="2.3" font-style="italic" text-anchor="middle">Tu mejor alternativa</text>
+            <text class="print-static-brand" x="39.6" y="30.3" fill="#3f4650" font-family="Arial, Helvetica, sans-serif" font-size="1.95" text-anchor="middle">en sistemas</text>
+            <rect class="print-static-brand" x="58.1" y="24.8" width="2.2" height="2.2" fill="#8ea1a0" />
+            <rect class="print-static-brand" x="62" y="24.1" width="2.5" height="2.5" fill="#2563eb" />
+            <rect class="print-static-brand" x="62" y="27.7" width="2.5" height="2.5" fill="#65c7e8" />
 
             <image
+              class="print-static-brand"
               href="{{F3_WATERMARK_IMAGE}}"
               x="20"
               y="80"
