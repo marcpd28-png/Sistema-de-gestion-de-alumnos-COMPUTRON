@@ -632,7 +632,7 @@ router.get(
     const detailRows = hasInstallments
       ? installmentsResult.rows.map((installment) => {
           return {
-            description: formatInstallmentReceiptLabel(installment.installment_number, installment.id),
+            description: formatInstallmentReceiptLabel(installment.installment_number),
             quantity: 1,
             unit_price: Number(installment.total_amount || 0),
             total: Number(installment.total_amount || 0),

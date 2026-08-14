@@ -282,6 +282,8 @@ const paymentReceiptPreviewSchema = z.object({
         .array(
           z.object({
             description: z.string().trim().min(1).max(180),
+            installment_id: z.number().int().positive().optional(),
+            installment_number: z.number().int().positive().optional(),
             amount: z.number().nonnegative(),
             quantity: z.number().int().positive().optional(),
           }),
@@ -454,7 +456,7 @@ const toDownloadFlag = (value) => {
 const mapPaymentDetailRows = (payment, detailsResultRows = []) => {
   if (detailsResultRows.length > 0) {
     return detailsResultRows.map((detail) => ({
-      description: formatInstallmentReceiptLabel(detail.installment_number, detail.installment_id),
+      description: formatInstallmentReceiptLabel(detail.installment_number),
       quantity: 1,
       unit_price: Number(detail.amount || 0),
       total: Number(detail.amount || 0),
@@ -1295,14 +1297,59 @@ router.post(
       }
     }
 
+    const detailInstallmentIds = [
+      ...new Set(
+        details
+          .map((item) => Number(item.installment_id || 0))
+          .filter((value) => Number.isInteger(value) && value > 0),
+      ),
+    ];
+    const installmentNumberById = new Map();
+
+    if (detailInstallmentIds.length > 0) {
+      const installmentNumbersResult = await query(
+        `WITH numbered_installments AS (
+           SELECT
+             i.id,
+             i.enrollment_id,
+             ROW_NUMBER() OVER (
+               PARTITION BY i.enrollment_id
+               ORDER BY i.due_date ASC NULLS LAST, i.id ASC
+             )::int AS installment_number
+           FROM installments i
+         )
+         SELECT id, installment_number
+         FROM numbered_installments
+         WHERE id = ANY($1::bigint[])
+           AND ($2::bigint IS NULL OR enrollment_id = $2)`,
+        [detailInstallmentIds, enrollmentId || null],
+      );
+
+      for (const row of installmentNumbersResult.rows) {
+        installmentNumberById.set(Number(row.id), Number(row.installment_number));
+      }
+    }
+
     const normalizedDetails = details
       .filter((item) => Number(item.amount || 0) > 0)
-      .map((item) => ({
-        description: item.description,
-        quantity: item.quantity || 1,
-        unit_price: Number(item.amount || 0),
-        total: Number(item.amount || 0),
-      }));
+      .map((item) => {
+        const installmentId = Number(item.installment_id || 0);
+        const installmentNumber =
+          Number(item.installment_number || 0) || installmentNumberById.get(installmentId) || null;
+        const rawDescription = String(item.description || '').trim();
+        const description = installmentNumber
+          ? formatInstallmentReceiptLabel(installmentNumber)
+          : /mensualidad/i.test(rawDescription)
+            ? 'CUOTA'
+            : rawDescription;
+
+        return {
+          description,
+          quantity: item.quantity || 1,
+          unit_price: Number(item.amount || 0),
+          total: Number(item.amount || 0),
+        };
+      });
 
     const totalFromDetails = normalizedDetails.reduce((sum, item) => sum + Number(item.total || 0), 0);
     const totalAmount = Number(amountReceived ?? totalFromDetails ?? 0);

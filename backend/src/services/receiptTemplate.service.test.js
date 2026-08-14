@@ -35,11 +35,11 @@ test('usa A5 doble como papel predeterminado del formato Computron', () => {
 });
 
 test('formatea cuotas por numero secuencial para comprobantes', () => {
-  assert.equal(formatInstallmentReceiptLabel(1, 91), '1RA CUOTA');
-  assert.equal(formatInstallmentReceiptLabel(2, 92), '2DA CUOTA');
-  assert.equal(formatInstallmentReceiptLabel(3, 93), '3RA CUOTA');
-  assert.equal(formatInstallmentReceiptLabel(4, 94), '4TA CUOTA');
-  assert.equal(formatInstallmentReceiptLabel(null, 94), 'CUOTA 94');
+  assert.equal(formatInstallmentReceiptLabel(1), 'CUOTA 1');
+  assert.equal(formatInstallmentReceiptLabel(2), 'CUOTA 2');
+  assert.equal(formatInstallmentReceiptLabel(3), 'CUOTA 3');
+  assert.equal(formatInstallmentReceiptLabel(4), 'CUOTA 4');
+  assert.equal(formatInstallmentReceiptLabel(null), 'CUOTA');
 });
 
 test('oculta los datos preimpresos solo al imprimir y mantiene orientacion normal', () => {
