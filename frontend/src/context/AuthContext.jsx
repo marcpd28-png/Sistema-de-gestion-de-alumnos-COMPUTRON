@@ -133,6 +133,7 @@ export function AuthProvider({ children }) {
         (typeof responseData === 'string' && responseData.trim()) ||
         (typeof responseData?.message === 'string' && responseData.message.trim()) ||
         '';
+      const responseDetails = responseData?.details || {};
       const rateLimitMessage =
         statusCode === 429
           ? `Demasiadas solicitudes al servidor. ${
@@ -145,7 +146,12 @@ export function AuthProvider({ children }) {
         rateLimitMessage ||
         responseMessage ||
         'No se pudo conectar con la API. Verifica que el backend esté activo y que el proxy de Vite apunte a http://localhost:4010';
-      return { ok: false, message };
+      return {
+        ok: false,
+        message,
+        code: responseDetails?.code || null,
+        email: responseDetails?.email || email.trim().toLowerCase(),
+      };
     } finally {
       setLoading(false);
     }

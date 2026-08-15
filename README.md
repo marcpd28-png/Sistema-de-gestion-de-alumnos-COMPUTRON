@@ -94,6 +94,28 @@ curl -X POST http://localhost:4010/api/auth/register \
 
 Luego inicia sesión en el frontend con ese usuario.
 
+## Activación por correo
+
+Al crear usuarios desde la interfaz se puede exigir activación por código. El sistema
+crea la cuenta como pendiente, envía un código de 6 dígitos al correo y no permite
+iniciar sesión hasta validar ese código desde la pantalla de login.
+
+Para enviar con Gmail configura SMTP en `backend/.env` usando una contraseña de
+aplicación de Google, no la contraseña normal de la cuenta:
+
+```env
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=465
+SMTP_SECURE=true
+SMTP_USER=tu-correo@gmail.com
+SMTP_PASS=contraseña_de_aplicación
+SMTP_FROM=tu-correo@gmail.com
+```
+
+En local, si SMTP no está configurado, Nodemailer usa transporte simulado y el backend
+devuelve el código solo para pruebas. En producción, el backend rechaza crear cuentas
+pendientes si SMTP no está configurado.
+
 ## Endpoints principales
 
 - Auth: `/api/auth/*`

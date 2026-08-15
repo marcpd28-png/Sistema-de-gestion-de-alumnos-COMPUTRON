@@ -74,6 +74,14 @@ const buildRecipientsByStudent = (guardianRows = []) => {
 
 const normalizeRecipientEmail = (value) => (value || '').trim().toLowerCase();
 
+const escapeHtml = (value) =>
+  String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
 const executeReminderJob = async (requestedBy) => {
   const dueInstallments = await query(
     `SELECT
@@ -142,9 +150,17 @@ const executeReminderJob = async (requestedBy) => {
       }
     }
 
-    const subject = `Recordatorio de pago - ${installment.course_name} (${installment.campus_name})`;
-    const text = `Hola, tienes una cuota pendiente de ${installment.pending_amount} con vencimiento el ${installment.due_date}.`;
-    const html = `<p>Hola,</p><p>Tienes una cuota pendiente de <strong>${installment.pending_amount}</strong>.</p><p>Curso: ${installment.course_name}</p><p>Sede: ${installment.campus_name}</p><p>Vence el: ${installment.due_date}</p>`;
+    const pendingAmount = String(installment.pending_amount ?? '');
+    const dueDate = String(installment.due_date ?? '');
+    const courseName = String(installment.course_name ?? '');
+    const campusName = String(installment.campus_name ?? '');
+    const subject = `Recordatorio de pago - ${courseName} (${campusName})`;
+    const text = `Hola, tienes una cuota pendiente de ${pendingAmount} con vencimiento el ${dueDate}.`;
+    const html = `<p>Hola,</p><p>Tienes una cuota pendiente de <strong>${escapeHtml(
+      pendingAmount,
+    )}</strong>.</p><p>Curso: ${escapeHtml(courseName)}</p><p>Sede: ${escapeHtml(
+      campusName,
+    )}</p><p>Vence el: ${escapeHtml(dueDate)}</p>`;
 
     for (const recipient of uniqueRecipientMap.values()) {
       tasks.push({
@@ -305,4 +321,3 @@ module.exports = {
   getReminderJob,
   listReminderJobs,
 };
-

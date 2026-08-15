@@ -248,6 +248,8 @@ router.get(
            u.base_campus_id,
            u.permission_mode,
            u.is_active,
+           u.activation_required,
+           u.email_verified_at,
            u.created_at
          FROM users u
          WHERE (
@@ -463,9 +465,11 @@ router.patch(
     const { rows } = await query(
       `UPDATE users
        SET is_active = $1,
+           activation_required = CASE WHEN $1 = TRUE THEN FALSE ELSE activation_required END,
+           email_verified_at = CASE WHEN $1 = TRUE THEN COALESCE(email_verified_at, NOW()) ELSE email_verified_at END,
            updated_at = NOW()
        WHERE id = $2
-       RETURNING id, first_name, last_name, email, is_active`,
+       RETURNING id, first_name, last_name, email, is_active, activation_required, email_verified_at`,
       [is_active, userId],
     );
 

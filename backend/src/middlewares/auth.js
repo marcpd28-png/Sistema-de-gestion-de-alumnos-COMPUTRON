@@ -24,6 +24,10 @@ const authenticate = async (req, _res, next) => {
 
   try {
     const campusAccess = await getUserCampuses(decoded.sub);
+    if (!campusAccess.user_exists || !campusAccess.is_active || campusAccess.activation_required) {
+      return next(new ApiError(401, 'Token inválido o expirado.'));
+    }
+
     const roles = decoded.roles || [];
     req.user = {
       id: decoded.sub,

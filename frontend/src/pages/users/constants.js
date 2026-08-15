@@ -11,6 +11,7 @@ export const INITIAL_CREDENTIAL_FORM = {
   email: '',
   password: '',
   use_email_as_password: false,
+  send_activation_code: true,
   document_type: 'DNI',
   document_number: '',
   phone: '',

@@ -29,6 +29,11 @@ const {
   replaceUserCampuses,
   validateCampusIds,
 } = require('../services/userCampuses.service');
+const {
+  createAndSendAccountActivationCode,
+  consumeAccountActivationCode,
+  hasSmtpConfig,
+} = require('../services/accountActivation.service');
 
 const router = express.Router();
 
@@ -58,6 +63,22 @@ const loginLimiter = rateLimit({
   message: { message: 'Demasiados intentos de login. Intente más tarde.' },
 });
 
+const activationLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Demasiados intentos de activación. Intente más tarde.' },
+});
+
+const activationResendLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { message: 'Demasiadas solicitudes de código. Intente más tarde.' },
+});
+
 const registerSchema = z.object({
   body: z.object({
     first_name: z.string().min(2).max(80),
@@ -71,6 +92,7 @@ const registerSchema = z.object({
     base_campus_id: optionalCampusIdSchema,
     campus_ids: z.array(z.coerce.number().int().positive()).max(100).optional(),
     must_change_password: z.boolean().optional().default(false),
+    send_activation_code: z.boolean().optional().default(false),
     teacher_assignment: teacherAssignmentSchema.optional(),
   }),
   params: z.object({}).optional(),
@@ -101,6 +123,23 @@ const changePasswordSchema = z.object({
   body: z.object({
     current_password: z.string().min(1).optional(),
     new_password: z.string().min(8).max(72),
+  }),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+const accountActivationSchema = z.object({
+  body: z.object({
+    email: z.string().trim().email(),
+    code: z.string().trim().regex(/^\d{6}$/, 'El código debe tener 6 dígitos.'),
+  }),
+  params: z.object({}).optional(),
+  query: z.object({}).optional(),
+});
+
+const resendActivationCodeSchema = z.object({
+  body: z.object({
+    email: z.string().trim().email(),
   }),
   params: z.object({}).optional(),
   query: z.object({}).optional(),
@@ -190,6 +229,7 @@ router.post(
       base_campus_id = null,
       campus_ids,
       must_change_password = false,
+      send_activation_code = false,
       teacher_assignment = null,
     } = req.validated.body;
     const normalizedEmail = email.trim().toLowerCase();
@@ -216,6 +256,14 @@ router.post(
 
     const { rows: countRows } = await query('SELECT COUNT(*)::int AS count FROM users');
     const userCount = countRows[0].count;
+    const shouldRequireActivation = userCount > 0 && Boolean(send_activation_code);
+
+    if (shouldRequireActivation && env.nodeEnv === 'production' && !hasSmtpConfig) {
+      throw new ApiError(
+        503,
+        'No se puede crear un usuario pendiente de activación porque SMTP no está configurado.',
+      );
+    }
 
     if (userCount > 0) {
       if (!req.headers.authorization) {
@@ -291,9 +339,12 @@ router.post(
            email,
            password_hash,
            base_campus_id,
-           must_change_password
+           must_change_password,
+           is_active,
+           activation_required,
+           email_verified_at
          )
-         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, CASE WHEN $11 = TRUE THEN NULL ELSE NOW() END)
          RETURNING
            id,
            first_name,
@@ -303,6 +354,8 @@ router.post(
            address,
            email,
            is_active,
+           activation_required,
+           email_verified_at,
            base_campus_id,
            must_change_password,
            created_at`,
@@ -316,6 +369,8 @@ router.post(
           hash,
           resolvedBaseCampusId,
           must_change_password,
+          !shouldRequireActivation,
+          shouldRequireActivation,
         ],
       );
 
@@ -463,7 +518,136 @@ router.post(
     invalidateCacheByPrefix('teachers:list');
     invalidateCacheByPrefix('teachers:assignments:list');
 
-    return res.status(201).json({ message: 'Usuario registrado.', user: created });
+    let activation = null;
+    if (shouldRequireActivation) {
+      try {
+        activation = await createAndSendAccountActivationCode({ user: created });
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            message: 'Activation email failed',
+            request_id: req.id || null,
+            user_id: created.id,
+            error: error.message,
+          }),
+        );
+        activation = {
+          email_sent: false,
+          simulated: false,
+          expires_in_minutes: null,
+        };
+      }
+    }
+
+    return res.status(201).json({
+      message: shouldRequireActivation ? 'Usuario registrado pendiente de activación.' : 'Usuario registrado.',
+      user: created,
+      activation: shouldRequireActivation ? { required: true, ...activation } : { required: false },
+    });
+  }),
+);
+
+router.post(
+  '/activate',
+  activationLimiter,
+  validate(accountActivationSchema),
+  asyncHandler(async (req, res) => {
+    const { email, code } = req.validated.body;
+    const normalizedEmail = email.trim().toLowerCase();
+
+    const userResult = await query(
+      `SELECT id, first_name, last_name, email, is_active, activation_required, must_change_password
+       FROM users
+       WHERE email = $1
+       LIMIT 1`,
+      [normalizedEmail],
+    );
+
+    if (userResult.rowCount === 0) {
+      throw new ApiError(400, 'Código inválido, vencido o no corresponde.');
+    }
+
+    const user = userResult.rows[0];
+    if (!user.activation_required) {
+      throw new ApiError(400, 'Código inválido, vencido o no corresponde.');
+    }
+
+    const activationResult = await consumeAccountActivationCode({ userId: user.id, code });
+    if (!activationResult.ok) {
+      throw new ApiError(400, 'Código inválido, vencido o con demasiados intentos.');
+    }
+
+    const updatedResult = await query(
+      `UPDATE users
+       SET is_active = TRUE,
+           activation_required = FALSE,
+           email_verified_at = COALESCE(email_verified_at, NOW()),
+           updated_at = NOW()
+       WHERE id = $1
+       RETURNING id, first_name, last_name, email, is_active, activation_required, must_change_password`,
+      [user.id],
+    );
+
+    invalidateUserPermissionCache(user.id);
+
+    return res.json({
+      message: 'Cuenta activada correctamente. Ya puede iniciar sesión.',
+      user: updatedResult.rows[0],
+    });
+  }),
+);
+
+router.post(
+  '/activation/resend',
+  activationResendLimiter,
+  validate(resendActivationCodeSchema),
+  asyncHandler(async (req, res) => {
+    const { email } = req.validated.body;
+    const normalizedEmail = email.trim().toLowerCase();
+    let activation = null;
+
+    if (env.nodeEnv === 'production' && !hasSmtpConfig) {
+      throw new ApiError(503, 'SMTP no está configurado para enviar códigos de activación.');
+    }
+
+    const userResult = await query(
+      `SELECT id, first_name, email, activation_required, is_active
+       FROM users
+       WHERE email = $1
+       LIMIT 1`,
+      [normalizedEmail],
+    );
+
+    const user = userResult.rows[0] || null;
+    if (user && user.activation_required && !user.is_active) {
+      try {
+        activation = await createAndSendAccountActivationCode({ user });
+      } catch (error) {
+        console.error(
+          JSON.stringify({
+            level: 'error',
+            message: 'Activation resend failed',
+            request_id: req.id || null,
+            user_id: user.id,
+            error: error.message,
+          }),
+        );
+        throw new ApiError(502, 'No se pudo enviar el código de activación.');
+      }
+    }
+
+    return res.json({
+      message: 'Si la cuenta está pendiente de activación, enviaremos un nuevo código al correo indicado.',
+      activation:
+        activation && env.nodeEnv !== 'production'
+          ? {
+              simulated: activation.simulated,
+              activation_code_preview: activation.activation_code_preview,
+              expires_in_minutes: activation.expires_in_minutes,
+            }
+          : null,
+    });
   }),
 );
 
@@ -476,7 +660,7 @@ router.post(
     const normalizedEmail = email.trim().toLowerCase();
 
     const { rows } = await query(
-      `SELECT id, first_name, last_name, email, password_hash, is_active, base_campus_id, must_change_password
+      `SELECT id, first_name, last_name, email, password_hash, is_active, activation_required, base_campus_id, must_change_password
        FROM users
        WHERE email = $1`,
       [normalizedEmail],
@@ -487,13 +671,20 @@ router.post(
     }
 
     const user = rows[0];
-    if (!user.is_active) {
-      throw new ApiError(403, 'La cuenta está desactivada.');
-    }
-
     const validPassword = await bcrypt.compare(password, user.password_hash);
     if (!validPassword) {
       throw new ApiError(401, 'Credenciales inválidas.');
+    }
+
+    if (user.activation_required) {
+      throw new ApiError(403, 'La cuenta está pendiente de activación.', {
+        code: 'ACCOUNT_PENDING_ACTIVATION',
+        email: user.email,
+      });
+    }
+
+    if (!user.is_active) {
+      throw new ApiError(403, 'La cuenta está desactivada.');
     }
 
     const roles = await getUserRoles(user.id);
@@ -551,7 +742,8 @@ router.post(
          password_hash,
          is_active,
          base_campus_id,
-         must_change_password
+         must_change_password,
+         activation_required
        FROM users
        WHERE id = $1
        LIMIT 1`,
@@ -563,7 +755,7 @@ router.post(
     }
 
     const currentUser = userResult.rows[0];
-    if (!currentUser.is_active) {
+    if (!currentUser.is_active || currentUser.activation_required) {
       throw new ApiError(403, 'La cuenta está desactivada.');
     }
 
@@ -648,7 +840,7 @@ router.post(
 
     const tokenRow = rows[0];
     const userResult = await query(
-      `SELECT id, email, is_active
+      `SELECT id, email, is_active, activation_required
        FROM users
        WHERE id = $1`,
       [decoded.sub],
@@ -660,7 +852,7 @@ router.post(
     }
 
     const currentUser = userResult.rows[0];
-    if (!currentUser.is_active) {
+    if (!currentUser.is_active || currentUser.activation_required) {
       clearRefreshCookie(res);
       throw new ApiError(403, 'La cuenta está desactivada.');
     }
@@ -748,13 +940,13 @@ router.get(
   authenticate,
   asyncHandler(async (req, res) => {
     const { rows } = await query(
-      `SELECT id, first_name, last_name, email, is_active, base_campus_id, must_change_password
+      `SELECT id, first_name, last_name, email, is_active, activation_required, base_campus_id, must_change_password
        FROM users
        WHERE id = $1`,
       [req.user.id],
     );
 
-    if (rows.length === 0) {
+    if (rows.length === 0 || rows[0].activation_required || !rows[0].is_active) {
       throw new ApiError(404, 'Usuario no encontrado.');
     }
 
@@ -769,6 +961,7 @@ router.get(
         campus_ids: campusAccess.campus_ids,
         campus_names: campusAccess.campus_names,
         must_change_password: Boolean(rows[0].must_change_password),
+        activation_required: Boolean(rows[0].activation_required),
         roles,
         permissions,
       },

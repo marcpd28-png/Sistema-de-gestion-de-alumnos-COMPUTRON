@@ -192,10 +192,30 @@ CREATE TABLE IF NOT EXISTS users (
   email VARCHAR(160) UNIQUE NOT NULL,
   password_hash TEXT NOT NULL,
   must_change_password BOOLEAN NOT NULL DEFAULT FALSE,
+  activation_required BOOLEAN NOT NULL DEFAULT FALSE,
+  email_verified_at TIMESTAMPTZ,
   is_active BOOLEAN NOT NULL DEFAULT TRUE,
   created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+CREATE TABLE IF NOT EXISTS email_verification_codes (
+  id BIGSERIAL PRIMARY KEY,
+  user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+  purpose VARCHAR(40) NOT NULL,
+  code_hash TEXT NOT NULL,
+  attempts SMALLINT NOT NULL DEFAULT 0,
+  expires_at TIMESTAMPTZ NOT NULL,
+  consumed_at TIMESTAMPTZ,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS idx_email_verification_codes_user_active
+  ON email_verification_codes(user_id, purpose, expires_at DESC)
+  WHERE consumed_at IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_email_verification_codes_expires_at
+  ON email_verification_codes(expires_at);
 
 CREATE TABLE IF NOT EXISTS user_roles (
   user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,

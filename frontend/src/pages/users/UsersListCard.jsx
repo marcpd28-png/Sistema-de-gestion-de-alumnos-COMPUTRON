@@ -183,16 +183,24 @@ export default function UsersListCard({
                       aria-label={`Cambiar estado de ${targetUser.first_name} ${targetUser.last_name}`}
                       onClick={() => onToggleStatus(targetUser)}
                       disabled={!canManageStatus || statusBusy}
-                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${targetUser.is_active ? 'bg-primary-700' : 'bg-primary-200'
-                        } ${!canManageStatus || statusBusy ? 'cursor-not-allowed opacity-60' : 'hover:opacity-90'}`}
+                      className={`relative inline-flex h-6 w-11 items-center rounded-full transition ${
+                        targetUser.is_active ? 'bg-primary-700' : 'bg-primary-200'
+                      } ${!canManageStatus || statusBusy ? 'cursor-not-allowed opacity-60' : 'hover:opacity-90'}`}
                     >
                       <span
-                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${targetUser.is_active ? 'translate-x-6' : 'translate-x-1'
-                          }`}
+                        className={`inline-block h-4 w-4 transform rounded-full bg-white transition ${
+                          targetUser.is_active ? 'translate-x-6' : 'translate-x-1'
+                        }`}
                       />
                     </button>
-                    <span className="text-xs font-semibold text-primary-700 dark:text-primary-300">
-                      {targetUser.is_active ? 'ACTIVO' : 'INACTIVO'}
+                    <span
+                      className={`text-xs font-semibold ${
+                        targetUser.activation_required
+                          ? 'text-amber-700 dark:text-amber-300'
+                          : 'text-primary-700 dark:text-primary-300'
+                      }`}
+                    >
+                      {targetUser.activation_required ? 'PENDIENTE' : targetUser.is_active ? 'ACTIVO' : 'INACTIVO'}
                     </span>
                   </div>
                 </td>

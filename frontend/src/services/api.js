@@ -15,7 +15,14 @@ let handleTokensUpdated = () => {};
 let handleAuthFailure = () => {};
 let refreshPromise = null;
 
-const AUTH_ROUTES = ['/auth/login', '/auth/refresh', '/auth/logout', '/auth/register'];
+const AUTH_ROUTES = [
+  '/auth/login',
+  '/auth/refresh',
+  '/auth/logout',
+  '/auth/register',
+  '/auth/activate',
+  '/auth/activation/resend',
+];
 
 const isAuthRoute = (url = '') => AUTH_ROUTES.some((path) => url.includes(path));
 

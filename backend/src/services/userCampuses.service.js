@@ -13,6 +13,9 @@ const normalizeCampusIds = (campusIds = []) =>
 const getUserCampuses = async (userId, db = { query }) => {
   const result = await db.query(
     `SELECT
+       TRUE AS user_exists,
+       u.is_active,
+       u.activation_required,
        u.base_campus_id,
        COALESCE(
          ARRAY_AGG(uc.campus_id ORDER BY uc.is_primary DESC, c.name, uc.campus_id)
@@ -33,7 +36,14 @@ const getUserCampuses = async (userId, db = { query }) => {
   );
 
   if (result.rowCount === 0) {
-    return { base_campus_id: null, campus_ids: [], campus_names: [] };
+    return {
+      user_exists: false,
+      is_active: false,
+      activation_required: false,
+      base_campus_id: null,
+      campus_ids: [],
+      campus_names: [],
+    };
   }
 
   const row = result.rows[0];
@@ -41,6 +51,9 @@ const getUserCampuses = async (userId, db = { query }) => {
 
   if (campusIds.length === 0 && row.base_campus_id) {
     return {
+      user_exists: true,
+      is_active: Boolean(row.is_active),
+      activation_required: Boolean(row.activation_required),
       base_campus_id: Number(row.base_campus_id),
       campus_ids: [Number(row.base_campus_id)],
       campus_names: row.campus_names || [],
@@ -48,6 +61,9 @@ const getUserCampuses = async (userId, db = { query }) => {
   }
 
   return {
+    user_exists: true,
+    is_active: Boolean(row.is_active),
+    activation_required: Boolean(row.activation_required),
     base_campus_id: row.base_campus_id ? Number(row.base_campus_id) : null,
     campus_ids: campusIds,
     campus_names: row.campus_names || [],

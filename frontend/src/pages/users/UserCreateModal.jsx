@@ -158,6 +158,16 @@ export default function UserCreateModal({
                 <span>Usar el correo como contraseña temporal y exigir cambio en el primer ingreso.</span>
               </label>
 
+              <label className="flex items-start gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm text-amber-900 md:col-span-2">
+                <input
+                  type="checkbox"
+                  className="mt-1"
+                  checked={Boolean(form.send_activation_code)}
+                  onChange={bindToggleField('send_activation_code')}
+                />
+                <span>Enviar código de activación al correo. La cuenta quedará pendiente hasta validar el código.</span>
+              </label>
+
               <label className="space-y-1 text-sm text-primary-800">
                 <span className="font-medium">Contraseña</span>
                 <div className="relative">

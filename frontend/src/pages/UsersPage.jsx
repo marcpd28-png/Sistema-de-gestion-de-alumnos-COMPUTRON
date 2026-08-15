@@ -537,6 +537,7 @@ export default function UsersPage() {
       (createUserForm.campus_ids || []).map(Number).filter(Number.isFinite),
     );
     const useEmailAsPassword = Boolean(createUserForm.use_email_as_password);
+    const sendActivationCode = Boolean(createUserForm.send_activation_code);
     const resolvedPassword = useEmailAsPassword ? normalizedEmail : createUserForm.password;
 
     if (!normalizedFirstName || !normalizedLastName) {
@@ -596,6 +597,7 @@ export default function UsersPage() {
       roles: [normalizedRole],
       campus_ids: selectedCampusIds,
       must_change_password: useEmailAsPassword,
+      send_activation_code: sendActivationCode,
     };
     const normalizedCreateAccess = sortUnique(createAccessPermissions);
     const shouldSaveCustomAccess = canConfigureCreateAccess && !createAccessMatchesRole;
@@ -628,15 +630,25 @@ export default function UsersPage() {
         }
       }
 
+      const activation = response.data?.activation || null;
+      const activationPreview = activation?.activation_code_preview;
+      const activationMessage = activation?.required
+        ? activation?.email_sent || activation?.simulated
+          ? activationPreview
+            ? ` Código local: ${activationPreview}.`
+            : ' Se envió el código de activación al correo.'
+          : ' La cuenta quedó pendiente, pero no se pudo enviar el código. Reenvíalo desde la pantalla de login.'
+        : '';
+
       closeCreateUserModal();
       setMessage(
         useEmailAsPassword
           ? shouldSaveCustomAccess
-            ? 'Usuario creado con vistas personalizadas. Su contraseña temporal es el correo y deberá cambiarla en el primer ingreso.'
-            : 'Usuario creado correctamente. Su contraseña temporal es el correo y deberá cambiarla en el primer ingreso.'
+            ? `Usuario creado con vistas personalizadas. Su contraseña temporal es el correo y deberá cambiarla en el primer ingreso.${activationMessage}`
+            : `Usuario creado correctamente. Su contraseña temporal es el correo y deberá cambiarla en el primer ingreso.${activationMessage}`
           : shouldSaveCustomAccess
-            ? 'Usuario creado con rol y vistas personalizadas.'
-            : 'Usuario creado correctamente.',
+            ? `Usuario creado con rol y vistas personalizadas.${activationMessage}`
+            : `Usuario creado correctamente.${activationMessage}`,
       );
       await loadUsers();
     } catch (requestError) {

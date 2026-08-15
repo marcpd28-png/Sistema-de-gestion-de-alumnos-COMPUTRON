@@ -304,6 +304,42 @@ const ensureUsersMustChangePasswordColumn = async () => {
   await query(`ALTER TABLE users ALTER COLUMN must_change_password SET NOT NULL`);
 };
 
+const ensureEmailActivationModel = async () => {
+  const usersExistsResult = await query(`SELECT to_regclass('public.users') AS table_name`);
+  const usersExists = Boolean(usersExistsResult.rows[0]?.table_name);
+
+  if (!usersExists) {
+    return;
+  }
+
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS activation_required BOOLEAN`);
+  await query(`UPDATE users SET activation_required = FALSE WHERE activation_required IS NULL`);
+  await query(`ALTER TABLE users ALTER COLUMN activation_required SET DEFAULT FALSE`);
+  await query(`ALTER TABLE users ALTER COLUMN activation_required SET NOT NULL`);
+  await query(`ALTER TABLE users ADD COLUMN IF NOT EXISTS email_verified_at TIMESTAMPTZ`);
+  await query(`
+    CREATE TABLE IF NOT EXISTS email_verification_codes (
+      id BIGSERIAL PRIMARY KEY,
+      user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      purpose VARCHAR(40) NOT NULL,
+      code_hash TEXT NOT NULL,
+      attempts SMALLINT NOT NULL DEFAULT 0,
+      expires_at TIMESTAMPTZ NOT NULL,
+      consumed_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    )
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_email_verification_codes_user_active
+    ON email_verification_codes(user_id, purpose, expires_at DESC)
+    WHERE consumed_at IS NULL
+  `);
+  await query(`
+    CREATE INDEX IF NOT EXISTS idx_email_verification_codes_expires_at
+    ON email_verification_codes(expires_at)
+  `);
+};
+
 const ensureTeacherAssignmentOverrideColumns = async () => {
   const existsResult = await query(`SELECT to_regclass('public.teacher_assignments') AS table_name`);
   const tableExists = Boolean(existsResult.rows[0]?.table_name);
@@ -1478,6 +1514,7 @@ const runBootMigrations = async () => {
   await ensureUsersDocumentNumberColumn();
   await ensureUsersContactColumns();
   await ensureUsersMustChangePasswordColumn();
+  await ensureEmailActivationModel();
   await ensureTeacherAssignmentOverrideColumns();
   await ensureTeacherCalendarEvents();
   await ensureCourseForumTables();
