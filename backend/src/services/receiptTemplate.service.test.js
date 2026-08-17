@@ -45,7 +45,7 @@ test('formatea cuotas por numero secuencial para comprobantes', () => {
 test('oculta los datos preimpresos solo al imprimir y mantiene orientacion normal', () => {
   const html = buildSampleReceipt();
 
-  assert.match(html, /\.print-static-brand,\s*\.company-data,\s*\.cut-line\s*\{\s*display: none;/);
+  assert.match(html, /\.format-background,\s*\.company-data\s*\{\s*display: none;/);
   assert.match(html, /class="print-static-brand" href="data:image\/png;base64,/);
   assert.match(html, /<section class="company-data">/);
   assert.doesNotMatch(html, /transform:\s*rotate\(180deg\)/);
