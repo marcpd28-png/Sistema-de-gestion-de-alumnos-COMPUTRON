@@ -586,7 +586,7 @@ function StaffPaymentsPage() {
 
       try {
         const response = await api.get(`/payments/${paymentId}/receipt`, {
-          params: { format, paper_size: paperSize },
+          params: { format, paper_size: paperSize, _t: Date.now() },
         });
         renderReceiptWindow(receiptWindow, response.data || '');
 

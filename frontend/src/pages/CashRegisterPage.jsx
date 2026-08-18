@@ -664,6 +664,7 @@ export default function CashRegisterPage() {
             format,
             paper_size: paperSize,
             campus_id: campusId || undefined,
+            _t: Date.now(),
           },
         });
         renderReceiptWindow(receiptWindow, response.data || '');
