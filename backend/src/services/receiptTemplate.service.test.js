@@ -42,13 +42,13 @@ test('formatea cuotas por numero secuencial para comprobantes', () => {
   assert.equal(formatInstallmentReceiptLabel(null), 'CUOTA');
 });
 
-test('oculta los datos preimpresos solo al imprimir y mantiene orientacion normal', () => {
+test('oculta los datos preimpresos solo al imprimir y rota 180 grados la orientacion', () => {
   const html = buildSampleReceipt();
 
   assert.match(html, /\.format-background,\s*\.company-data\s*\{\s*display: none;/);
   assert.match(html, /class="print-static-brand" href="data:image\/png;base64,/);
   assert.match(html, /<section class="company-data">/);
-  assert.doesNotMatch(html, /transform:\s*rotate\(180deg\)/);
+  assert.match(html, /transform:\s*translate\(var\(--print-offset-x,\s*0mm\),\s*var\(--print-offset-y,\s*0mm\)\)\s*rotate\(180deg\)/);
 });
 
 test('mantiene el modo A4 doble bajo parametro explicito', () => {

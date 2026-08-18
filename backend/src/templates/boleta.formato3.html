@@ -27,6 +27,8 @@
       :root {
         --f3-a5-scale: 0.7070707071;
         --f3-a5-page-height: 148.15mm;
+        --print-offset-x: 0mm;
+        --print-offset-y: 0mm;
       }
 
       html,
@@ -390,6 +392,11 @@
         .format-background,
         .company-data {
           display: none;
+        }
+
+        .receipt {
+          transform: translate(var(--print-offset-x, 0mm), var(--print-offset-y, 0mm)) rotate(180deg);
+          transform-origin: center center;
         }
       }
     </style>
