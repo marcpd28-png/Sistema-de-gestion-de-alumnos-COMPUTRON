@@ -248,7 +248,7 @@ export default function EnrollmentsPage() {
 
     try {
       const response = await api.get(`/enrollments/${enrollmentId}/receipt`, {
-        params: { format, paper_size: paperSize },
+        params: { format, paper_size: paperSize, _t: Date.now() },
         responseType: 'text',
       });
 
